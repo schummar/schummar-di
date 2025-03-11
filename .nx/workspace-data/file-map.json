@@ -1,0 +1,39 @@
+{
+  "version": "6.0",
+  "nxVersion": "20.5.0",
+  "pathMappings": {},
+  "nxJsonPlugins": [],
+  "fileMap": {
+    "nonProjectFiles": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "hash": "10961805753587711162"
+      },
+      {
+        "file": ".gitignore",
+        "hash": "3513492345290072647"
+      },
+      {
+        "file": "nx.json",
+        "hash": "9364288647901068875"
+      },
+      {
+        "file": "package.json",
+        "hash": "9068730777482452870"
+      },
+      {
+        "file": "pnpm-lock.yaml",
+        "hash": "16637976487593870152"
+      },
+      {
+        "file": "src/index.ts",
+        "hash": "10100469444977323922"
+      },
+      {
+        "file": "tsup.config.ts",
+        "hash": "9018901395452399563"
+      }
+    ],
+    "projectFileMap": {}
+  }
+}

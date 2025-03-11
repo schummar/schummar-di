@@ -1,0 +1,31 @@
+{
+  "name": "@schummar/di",
+  "type": "module",
+  "version": "0.0.0",
+  "description": "A simple dependency injection library for TypeScript.",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "typescript",
+    "dependency-injection",
+    "di",
+    "inversion-of-control",
+    "ioc"
+  ],
+  "author": "Marco Schumacher <marco@schumacher.dev>",
+  "license": "ISC",
+  "volta": {
+    "node": "22.14.0",
+    "pnpm": "10.6.2"
+  },
+  "devDependencies": {
+    "@nx/js": "^20.5.0",
+    "nx": "^20.5.0",
+    "oxlint": "^0.15.14",
+    "prettier": "^3.5.3",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2"
+  }
+}
