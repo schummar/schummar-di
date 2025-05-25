@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "moduleResolution": "bundler",
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/.tsbuildinfo"
+  }
+}
