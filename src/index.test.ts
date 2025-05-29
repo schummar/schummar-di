@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { createContext, background, singleton, transient, type BackgroundService } from './index';
+import { createContainer, background, singleton, transient, type BackgroundService } from './index';
 
 describe('resolve', () => {
   test('with classes', () => {
@@ -9,17 +9,17 @@ describe('resolve', () => {
 
     class ServiceB {
       value;
-      constructor(public context: { serviceA: ServiceA }) {
-        this.value = context.serviceA.value + 'b';
+      constructor({ serviceA }: { serviceA: ServiceA }) {
+        this.value = serviceA.value + 'b';
       }
     }
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: ServiceA,
       serviceB: ServiceB,
     });
 
-    const serviceB = context.resolve('serviceB');
+    const serviceB = container.resolve('serviceB');
     expect(serviceB.value).toBe('ab');
   });
 
@@ -28,32 +28,32 @@ describe('resolve', () => {
       return { value: 'a' };
     }
 
-    function ServiceB(context: { serviceA: ReturnType<typeof ServiceA> }) {
-      return { value: context.serviceA.value + 'b' };
+    function ServiceB({ serviceA }: { serviceA: ReturnType<typeof ServiceA> }) {
+      return { value: serviceA.value + 'b' };
     }
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: ServiceA,
       serviceB: ServiceB,
     });
 
-    const serviceB = context.resolve('serviceB');
+    const serviceB = container.resolve('serviceB');
     expect(serviceB.value).toBe('ab');
   });
 
   test('with constants', () => {
     const serviceA = { value: 'a' };
 
-    function ServiceB(context: { serviceA: typeof serviceA }) {
-      return { value: context.serviceA.value + 'b' };
+    function ServiceB(deps: { serviceA: typeof serviceA }) {
+      return { value: deps.serviceA.value + 'b' };
     }
 
-    const context = createContext({
+    const container = createContainer({
       serviceA,
       serviceB: ServiceB,
     });
 
-    const serviceB = context.resolve('serviceB');
+    const serviceB = container.resolve('serviceB');
     expect(serviceB.value).toBe('ab');
   });
 });
@@ -61,19 +61,19 @@ describe('resolve', () => {
 describe('life cycle', () => {
   test('singleton', () => {
     const serviceA = vi.fn(() => ({ value: 'a' }));
-    const serviceB = vi.fn((context: { serviceA: ReturnType<typeof serviceA> }) => ({
-      value: context.serviceA.value + 'b',
+    const serviceB = vi.fn((deps: { serviceA: ReturnType<typeof serviceA> }) => ({
+      value: deps.serviceA.value + 'b',
     }));
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: singleton(serviceA),
       serviceB: singleton(serviceB),
     });
 
-    const serviceB1 = context.resolve('serviceB');
-    const serviceB2 = context.resolve('serviceB');
-    const serviceA1 = context.resolve('serviceA');
-    const serviceA2 = context.resolve('serviceA');
+    const serviceB1 = container.resolve('serviceB');
+    const serviceB2 = container.resolve('serviceB');
+    const serviceA1 = container.resolve('serviceA');
+    const serviceA2 = container.resolve('serviceA');
 
     expect(serviceB1).toBe(serviceB2);
     expect(serviceA1).toBe(serviceA2);
@@ -83,19 +83,19 @@ describe('life cycle', () => {
 
   test('transient', () => {
     const serviceA = vi.fn(() => ({ value: 'a' }));
-    const serviceB = vi.fn((context: { serviceA: ReturnType<typeof serviceA> }) => ({
-      value: context.serviceA.value + 'b',
+    const serviceB = vi.fn((deps: { serviceA: ReturnType<typeof serviceA> }) => ({
+      value: deps.serviceA.value + 'b',
     }));
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: transient(serviceA),
       serviceB: transient(serviceB),
     });
 
-    const serviceB1 = context.resolve('serviceB');
-    const serviceB2 = context.resolve('serviceB');
-    const serviceA1 = context.resolve('serviceA');
-    const serviceA2 = context.resolve('serviceA');
+    const serviceB1 = container.resolve('serviceB');
+    const serviceB2 = container.resolve('serviceB');
+    const serviceA1 = container.resolve('serviceA');
+    const serviceA2 = container.resolve('serviceA');
 
     expect(serviceB1).not.toBe(serviceB2);
     expect(serviceA1).not.toBe(serviceA2);
@@ -110,7 +110,7 @@ describe('life cycle', () => {
       start = start;
     }
 
-    createContext({
+    createContainer({
       serviceA: background(ServiceA),
     });
 
@@ -121,51 +121,51 @@ describe('life cycle', () => {
 describe('circular dependencies', () => {
   test('throws on circular dependency', () => {
     class ServiceA {
-      constructor(public context: { serviceB: ServiceB }) {
-        context.serviceB;
+      constructor(private deps: { serviceB: ServiceB }) {
+        deps.serviceB;
       }
     }
 
     class ServiceB {
-      constructor(public context: { serviceA: ServiceA }) {
-        context.serviceA;
+      constructor(private deps: { serviceA: ServiceA }) {
+        deps.serviceA;
       }
     }
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: ServiceA,
       serviceB: ServiceB,
     });
 
-    expect(() => context.resolve('serviceA')).toThrowError(
+    expect(() => container.resolve('serviceA')).toThrowError(
       /Circular dependency detected: serviceA -> serviceB -> serviceA/,
     );
   });
 
   test("doesn't throw on circular dependency if resolved lazily", () => {
     class ServiceA {
-      constructor(public context: { serviceB: ServiceB }) {}
+      constructor(private deps: { serviceB: ServiceB }) {}
 
       get serviceB() {
-        return this.context.serviceB;
+        return this.deps.serviceB;
       }
     }
 
     class ServiceB {
       serviceA: ServiceA;
 
-      constructor(public context: { serviceA: ServiceA }) {
-        this.serviceA = context.serviceA;
+      constructor(private deps: { serviceA: ServiceA }) {
+        this.serviceA = deps.serviceA;
       }
     }
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: ServiceA,
       serviceB: ServiceB,
     });
 
-    const serviceA = context.resolve('serviceA');
-    const serviceB = context.resolve('serviceB');
+    const serviceA = container.resolve('serviceA');
+    const serviceB = container.resolve('serviceB');
 
     expect(serviceA.serviceB).toBe(serviceB);
     expect(serviceB.serviceA).toBe(serviceA);
@@ -192,16 +192,17 @@ describe('disposable', () => {
       [Symbol.dispose]: disposeC,
     };
 
-    const context = createContext({
-      serviceA: ServiceA,
-      serviceB: ServiceB,
-      serviceC,
-    });
+    {
+      await using container = createContainer({
+        serviceA: ServiceA,
+        serviceB: ServiceB,
+        serviceC,
+      });
 
-    context.resolve('serviceA');
-    context.resolve('serviceB');
-    context.resolve('serviceC');
-    await context.dispose();
+      container.resolve('serviceA');
+      container.resolve('serviceB');
+      container.resolve('serviceC');
+    }
 
     expect(disposeA).toHaveBeenCalledOnce();
     expect(disposeB).toHaveBeenCalledOnce();
@@ -227,16 +228,17 @@ describe('disposable', () => {
       [Symbol.asyncDispose]: asyncDisposeC,
     };
 
-    const context = createContext({
-      serviceA: ServiceA,
-      serviceB: ServiceB,
-      serviceC,
-    });
+    {
+      await using container = createContainer({
+        serviceA: ServiceA,
+        serviceB: ServiceB,
+        serviceC,
+      });
 
-    context.resolve('serviceA');
-    context.resolve('serviceB');
-    context.resolve('serviceC');
-    await context.dispose();
+      container.resolve('serviceA');
+      container.resolve('serviceB');
+      container.resolve('serviceC');
+    }
 
     expect(asyncDisposeA).toHaveBeenCalledOnce();
     expect(asyncDisposeB).toHaveBeenCalledOnce();
@@ -252,17 +254,17 @@ describe('error handling', () => {
       }
     }
     class ServiceB {
-      constructor(public context: { serviceA: ServiceA }) {
-        context.serviceA;
+      constructor(private deps: { serviceA: ServiceA }) {
+        deps.serviceA;
       }
     }
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: ServiceA,
       serviceB: ServiceB,
     });
 
-    expect(() => context.resolve('serviceB')).toThrowErrorMatchingInlineSnapshot(
+    expect(() => container.resolve('serviceB')).toThrowErrorMatchingInlineSnapshot(
       `[InjectionError: Injection error for serviceB -> serviceA: ServiceA error]`,
     );
   });
@@ -272,11 +274,11 @@ describe('error handling', () => {
       throw new Error('ServiceA error');
     }
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: ServiceA,
     });
 
-    expect(() => context.resolve('serviceA')).toThrowError(/ServiceA error/);
+    expect(() => container.resolve('serviceA')).toThrowError(/ServiceA error/);
   });
 
   test('reports dipose errors', async () => {
@@ -288,12 +290,12 @@ describe('error handling', () => {
       [Symbol.dispose] = disposeA;
     }
 
-    const context = createContext({
+    const container = createContainer({
       serviceA: ServiceA,
     });
 
-    context.resolve('serviceA');
-    await expect(() => context.dispose()).rejects.toThrowErrorMatchingInlineSnapshot(
+    container.resolve('serviceA');
+    await expect(() => container[Symbol.asyncDispose]()).rejects.toThrowErrorMatchingInlineSnapshot(
       `[DisposeError: 1 error(s) during dispose: Injection error for serviceA: ServiceA error]`,
     );
   });

@@ -1,80 +1,73 @@
+import { DisposeError, InjectionError } from './errors';
+
 export interface BackgroundService {
   start(): void;
 }
 
 export type LifeCycle = 'singleton' | 'transient' | 'background';
 
-export type Implementation<Context, T> = ((context: Context) => T) | (new (context: Context) => T) | T;
+export type Service<TDeps, TInstance> = ((deps: TDeps) => TInstance) | (new (deps: TDeps) => TInstance) | TInstance;
 
-export interface Service<Context, T> {
-  service: Implementation<Context, T>;
+export interface ServiceEntry<TDeps, TInstance> {
+  service: Service<TDeps, TInstance>;
   lifeCycle: LifeCycle;
 }
 
-export type ServiceMap<Context> = {
-  [K in keyof Context]: Implementation<Context, Context[K]> | Service<Context, Context[K]>;
+export type ServiceMap<TServices> = {
+  [K in keyof TServices]: Service<TServices, TServices[K]> | ServiceEntry<TServices, TServices[K]>;
 };
 
-export class InjectionError extends Error {
-  name = 'InjectionError';
-
-  constructor(
-    public readonly path: (string | number | symbol)[],
-    public readonly cause: unknown,
-  ) {
-    super(`Injection error for ${path.join(' -> ')}: ${errorToString(cause)}`);
-  }
+export function createContainer<TServices extends object>(services: ServiceMap<TServices>): Container<TServices> {
+  return new Container(services);
 }
 
-export class DisposeError extends Error {
-  name = 'DisposeError';
+export class Container<TServices extends object> implements AsyncDisposable {
+  private services: Map<keyof TServices, ServiceEntry<TServices, unknown>>;
+  private instances = new Map<keyof TServices, TServices[keyof TServices]>();
+  private resolving = new Set<keyof TServices>();
+  private disposables = new Map<Disposable | AsyncDisposable, string | number | symbol>();
 
-  constructor(
-    public readonly errors: {
-      key: string | number | symbol;
-      instance: unknown;
-      cause: unknown;
-    }[],
-  ) {
-    super(
-      `${errors.length} error(s) during dispose: ${errors
-        .map(({ key, cause }) => `Injection error for ${String(key)}: ${errorToString(cause)}`)
-        .join(', ')}`,
+  constructor(services: ServiceMap<TServices>) {
+    this.services = new Map<keyof TServices, ServiceEntry<TServices, unknown>>(
+      Reflect.ownKeys(services).map((key) => {
+        const value = services[key as keyof TServices];
+        const service =
+          typeof value === 'object' && value !== null && 'service' in value && 'lifeCycle' in value
+            ? value
+            : { service: value, lifeCycle: 'singleton' };
+
+        return [key as keyof TServices, service as ServiceEntry<TServices, unknown>];
+      }),
     );
-  }
-}
 
-export function createContext<Context extends object>(
-  serviceMap: ServiceMap<Context> & Record<string, Implementation<Context, unknown>>,
-) {
-  const services = new Map<keyof Context, Service<Context, unknown>>();
-  const instances: Partial<Context> = {};
-  const disposables = new Map<Disposable | AsyncDisposable, string | number | symbol>();
-  const resolving = new Set<keyof Context>();
-
-  for (const key of Reflect.ownKeys(serviceMap)) {
-    const value = serviceMap[key as keyof Context];
-    const service =
-      typeof value === 'object' && value !== null && 'service' in value && 'lifeCycle' in value
-        ? value
-        : { service: value, lifeCycle: 'singleton' };
-
-    services.set(key as keyof Context, service as Service<Context, unknown>);
+    for (const [key, entry] of this.services) {
+      if (entry.lifeCycle === 'background') {
+        const instance = this.resolve(key);
+        if (
+          typeof instance === 'object' &&
+          instance !== null &&
+          'start' in instance &&
+          typeof instance.start === 'function'
+        ) {
+          instance.start();
+        }
+      }
+    }
   }
 
-  const context = new Proxy<Context>(instances as any, {
-    get(_target, p) {
-      return resolve(p as keyof Context);
+  private resolver = new Proxy<TServices>({} as any, {
+    get: (_target, p) => {
+      return this.resolve(p as keyof TServices);
     },
   });
 
-  function build<T>(implementation: Implementation<Context, T>): T {
+  inject<T>(implementation: Service<TServices, T>): T {
     if (typeof implementation === 'function') {
       try {
-        return (implementation as (context: Context) => T)(context);
+        return (implementation as (deps: TServices) => T)(this.resolver);
       } catch (error) {
         if (error instanceof TypeError && error.message.includes(`cannot be invoked without 'new'`)) {
-          return new (implementation as new (context: Context) => T)(context);
+          return new (implementation as new (deps: TServices) => T)(this.resolver);
         }
 
         throw error;
@@ -84,8 +77,8 @@ export function createContext<Context extends object>(
     }
   }
 
-  function resolve<Key extends keyof Context>(key: Key): Context[Key] {
-    const entry = services.get(key);
+  resolve<Key extends keyof TServices>(key: Key): TServices[Key] {
+    const entry = this.services.get(key);
 
     if (!entry) {
       throw new Error(`Service ${String(key)} not found`);
@@ -93,27 +86,27 @@ export function createContext<Context extends object>(
 
     const { service, lifeCycle } = entry;
 
-    if (lifeCycle !== 'transient' && key in instances) {
-      return instances[key] as Context[Key];
+    if (lifeCycle !== 'transient' && this.instances.has(key)) {
+      return this.instances.get(key) as TServices[Key];
     }
 
-    if (resolving.has(key)) {
+    if (this.resolving.has(key)) {
       throw new Error(
-        `Circular dependency detected: ${[...resolving].join(' -> ')} -> ${String(key)}. Access the context after the constructor to avoid this error.`,
+        `Circular dependency detected: ${[...this.resolving].join(' -> ')} -> ${String(key)}. Access the dependency after the constructor to avoid this error.`,
       );
     }
 
     try {
-      resolving.add(key);
+      this.resolving.add(key);
 
-      const instance = build(service) as Context[Key];
+      const instance = this.inject(service) as TServices[Key];
 
       if (lifeCycle === 'singleton') {
-        instances[key] = instance;
+        this.instances.set(key, instance);
       }
 
       if (isDisposable(instance)) {
-        disposables.set(instance, key);
+        this.disposables.set(instance, key);
       }
 
       return instance;
@@ -122,90 +115,69 @@ export function createContext<Context extends object>(
         throw error;
       }
 
-      throw new InjectionError([...resolving], error);
+      throw new InjectionError([...this.resolving], error);
     } finally {
-      resolving.delete(key);
+      this.resolving.delete(key);
     }
   }
 
-  for (const [key, entry] of services) {
-    if (entry.lifeCycle === 'background') {
-      const instance = resolve(key);
-      if (
-        typeof instance === 'object' &&
-        instance !== null &&
-        'start' in instance &&
-        typeof instance.start === 'function'
-      ) {
-        instance.start();
+  async [Symbol.asyncDispose]() {
+    const promises: Promise<void>[] = [];
+    const errors: DisposeError['errors'] = [];
+
+    for (const [disposable, key] of this.disposables) {
+      if (Symbol.dispose in disposable) {
+        try {
+          disposable[Symbol.dispose]();
+        } catch (error) {
+          errors.push({ key, instance: disposable, cause: error });
+        }
+      }
+
+      if (Symbol.asyncDispose in disposable) {
+        promises.push(
+          (async () => {
+            try {
+              await (disposable as AsyncDisposable)[Symbol.asyncDispose]();
+            } catch (error) {
+              errors.push({ key, instance: disposable, cause: error });
+            }
+          })(),
+        );
       }
     }
+
+    this.instances.clear();
+    this.disposables.clear();
+
+    await Promise.all(promises);
+
+    if (errors.length > 0) {
+      throw new DisposeError(errors);
+    }
   }
-
-  return {
-    resolve<Key extends keyof Context>(key: Key): Context[Key] {
-      return resolve(key);
-    },
-
-    inject<T>(implementation: Implementation<Context, T>) {
-      return build(implementation);
-    },
-
-    async dispose() {
-      const promises: Promise<void>[] = [];
-      const errors: DisposeError['errors'] = [];
-
-      for (const [disposable, key] of disposables) {
-        if (Symbol.dispose in disposable) {
-          try {
-            disposable[Symbol.dispose]();
-          } catch (error) {
-            errors.push({ key, instance: disposable, cause: error });
-          }
-        }
-
-        if (Symbol.asyncDispose in disposable) {
-          promises.push(
-            (async () => {
-              try {
-                await (disposable as AsyncDisposable)[Symbol.asyncDispose]();
-              } catch (error) {
-                errors.push({ key, instance: disposable, cause: error });
-              }
-            })(),
-          );
-        }
-      }
-
-      await Promise.all(promises);
-
-      if (errors.length > 0) {
-        throw new DisposeError(errors);
-      }
-    },
-  };
 }
 
-export function singleton<Context, T>(implementation: Implementation<Context, T>): Service<Context, T> {
+export function singleton<TDeps, TInstance>(service: Service<TDeps, TInstance>): ServiceEntry<TDeps, TInstance> {
   return {
-    service: implementation,
+    service,
     lifeCycle: 'singleton',
   };
 }
 
-export function transient<Context, T>(implementation: Implementation<Context, T>): Service<Context, T> {
+export function transient<TDeps, TInstance>(service: Service<TDeps, TInstance>): ServiceEntry<TDeps, TInstance> {
   return {
-    service: implementation,
+    service,
     lifeCycle: 'transient',
   };
 }
 
-export function background<Context, T extends BackgroundService>(
-  implementation: Implementation<Context, T>,
-): Service<Context, T> {
+export function background<TDeps, TInstance extends BackgroundService>(
+  service: Service<TDeps, TInstance>,
+): ServiceEntry<TDeps, TInstance> {
   return {
-    service: implementation,
-    lifeCycle: 'background' as LifeCycle,
+    service,
+    lifeCycle: 'background',
   };
 }
 
@@ -215,16 +187,4 @@ function isDisposable(obj: unknown): obj is Disposable | AsyncDisposable {
     obj !== null &&
     ((Symbol.dispose && Symbol.dispose in obj) || (Symbol.asyncDispose && Symbol.asyncDispose in obj))
   );
-}
-
-function errorToString(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  if (typeof error === 'object' && error !== null) {
-    return JSON.stringify(error);
-  }
-
-  return String(error);
 }
