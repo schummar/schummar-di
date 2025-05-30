@@ -40,13 +40,11 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         if: always()
         with:
-          files: ./packages/schummar-translate/test-results.xml
+          files: ./test-results.xml
 
       - name: "Report Coverage"
         uses: davelosert/vitest-coverage-report-action@v2
         if: always()
-        with:
-          working-directory: ./packages/schummar-translate
 
       - name: Build
         run: pnpm build

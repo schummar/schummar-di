@@ -55,19 +55,27 @@ export class Container<TServices extends object> implements AsyncDisposable {
     }
   }
 
-  private resolver = new Proxy<TServices>({} as any, {
-    get: (_target, p) => {
-      return this.resolve(p as keyof TServices);
-    },
-  });
-
   inject<T>(implementation: Service<TServices, T>): T {
+    const resolvedServices = new Map<keyof TServices, TServices[keyof TServices]>();
+
+    const resolver = new Proxy<TServices>({} as any, {
+      get: (_target, p) => {
+        let service = resolvedServices.get(p as keyof TServices);
+        if (!service) {
+          service = this.resolve(p as keyof TServices);
+          resolvedServices.set(p as keyof TServices, service);
+        }
+
+        return service;
+      },
+    });
+
     if (typeof implementation === 'function') {
       try {
-        return (implementation as (deps: TServices) => T)(this.resolver);
+        return (implementation as (deps: TServices) => T)(resolver);
       } catch (error) {
         if (error instanceof TypeError && error.message.includes(`cannot be invoked without 'new'`)) {
-          return new (implementation as new (deps: TServices) => T)(this.resolver);
+          return new (implementation as new (deps: TServices) => T)(resolver);
         }
 
         throw error;
@@ -101,7 +109,7 @@ export class Container<TServices extends object> implements AsyncDisposable {
 
       const instance = this.inject(service) as TServices[Key];
 
-      if (lifeCycle === 'singleton') {
+      if (lifeCycle !== 'transient') {
         this.instances.set(key, instance);
       }
 

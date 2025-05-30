@@ -59,7 +59,7 @@ describe('resolve', () => {
 });
 
 describe('life cycle', () => {
-  test('singleton', () => {
+  test('singleton service is only created once', () => {
     const serviceA = vi.fn(() => ({ value: 'a' }));
     const serviceB = vi.fn((deps: { serviceA: ReturnType<typeof serviceA> }) => ({
       value: deps.serviceA.value + 'b',
@@ -81,7 +81,7 @@ describe('life cycle', () => {
     expect(serviceB).toHaveBeenCalledTimes(1);
   });
 
-  test('transient', () => {
+  test('transient service is created on each resolve', () => {
     const serviceA = vi.fn(() => ({ value: 'a' }));
     const serviceB = vi.fn((deps: { serviceA: ReturnType<typeof serviceA> }) => ({
       value: deps.serviceA.value + 'b',
@@ -103,7 +103,40 @@ describe('life cycle', () => {
     expect(serviceB).toHaveBeenCalledTimes(2);
   });
 
-  test('background', () => {
+  test('transient service is only created once for one service', () => {
+    const serviceA = vi.fn(() => ({ value: 'a' }));
+    const serviceB = vi.fn((deps: { serviceA: ReturnType<typeof serviceA> }) => {
+      deps.serviceA;
+      deps.serviceA;
+    });
+
+    const container = createContainer({
+      serviceA: transient(serviceA),
+      serviceB: serviceB,
+    });
+
+    container.resolve('serviceB');
+
+    expect(serviceA).toHaveBeenCalledOnce();
+  });
+
+  test('background service is only created once', () => {
+    const start = vi.fn();
+
+    class ServiceA implements BackgroundService {
+      start = start;
+    }
+
+    const container = createContainer({
+      serviceA: background(ServiceA),
+    });
+
+    const serviceA1 = container.resolve('serviceA');
+    const serviceA2 = container.resolve('serviceA');
+    expect(serviceA1).toBe(serviceA2);
+  });
+
+  test('background service starts automatically', () => {
     const start = vi.fn();
 
     class ServiceA implements BackgroundService {
