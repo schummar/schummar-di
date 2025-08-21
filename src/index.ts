@@ -1,3 +1,4 @@
+import type { O } from 'vitest/dist/chunks/reporters.66aFHiyX.js';
 import { DisposeError, InjectionError } from './errors';
 
 export interface BackgroundService {
@@ -9,12 +10,15 @@ export type LifeCycle = 'singleton' | 'transient' | 'background';
 export type Service<TDeps, TInstance> = ((deps: TDeps) => TInstance) | (new (deps: TDeps) => TInstance) | TInstance;
 
 export interface ServiceEntry<TDeps, TInstance> {
-  service: Service<TDeps, TInstance>;
+  service: Service<TDeps, TInstance> | readonly Service<TDeps, TInstance>[];
   lifeCycle: LifeCycle;
 }
 
 export type ServiceMap<TServices> = {
-  [K in keyof TServices]: Service<TServices, TServices[K]> | ServiceEntry<TServices, TServices[K]>;
+  [K in keyof TServices]:
+    | Service<TServices, TServices[K]>
+    | readonly Service<TServices, TServices[K]>[]
+    | ServiceEntry<TServices, TServices[K]>;
 };
 
 export function createContainer<TServices extends object>(services: ServiceMap<TServices>): Container<TServices> {
@@ -62,7 +66,7 @@ export class Container<TServices extends object> implements AsyncDisposable {
       get: (_target, p) => {
         let service = resolvedServices.get(p as keyof TServices);
         if (!service) {
-          service = this.resolve(p as keyof TServices);
+          service = this.resolve(p as keyof TServices, implementation);
           resolvedServices.set(p as keyof TServices, service);
         }
 
@@ -85,20 +89,36 @@ export class Container<TServices extends object> implements AsyncDisposable {
     }
   }
 
-  resolve<Key extends keyof TServices>(key: Key): TServices[Key] {
-    const entry = this.services.get(key);
+  resolve<Key extends keyof TServices>(key: Key, forService?: Service<TServices, unknown>): TServices[Key] {
+    const entry = this.services.get(key) as ServiceEntry<TServices, TServices[Key]> | undefined;
 
     if (!entry) {
       throw new Error(`Service ${String(key)} not found`);
     }
 
-    const { service, lifeCycle } = entry;
-
-    if (lifeCycle !== 'transient' && this.instances.has(key)) {
+    if (entry.lifeCycle !== 'transient' && this.instances.has(key)) {
       return this.instances.get(key) as TServices[Key];
     }
 
-    if (this.resolving.has(key)) {
+    let service: Service<TServices, TServices[Key]> | undefined;
+    let isResolvingNested = false;
+    if (Array.isArray(entry?.service)) {
+      const index = forService ? entry.service.findIndex((s) => s === forService) : -1;
+      if (index !== -1) {
+        service = entry.service[index - 1];
+        isResolvingNested = true;
+      } else {
+        service = entry.service.at(-1);
+      }
+    } else {
+      service = entry?.service as Service<TServices, TServices[Key]>;
+    }
+
+    if (!service) {
+      throw new Error(`Service ${String(key)} not found`);
+    }
+
+    if (!isResolvingNested && this.resolving.has(key)) {
       throw new Error(
         `Circular dependency detected: ${[...this.resolving].join(' -> ')} -> ${String(key)}. Access the dependency after the constructor to avoid this error.`,
       );
@@ -107,9 +127,9 @@ export class Container<TServices extends object> implements AsyncDisposable {
     try {
       this.resolving.add(key);
 
-      const instance = this.inject(service) as TServices[Key];
+      const instance = this.inject(service);
 
-      if (lifeCycle !== 'transient') {
+      if (entry.lifeCycle !== 'transient') {
         this.instances.set(key, instance);
       }
 
@@ -166,14 +186,14 @@ export class Container<TServices extends object> implements AsyncDisposable {
   }
 }
 
-export function singleton<TDeps, TInstance>(service: Service<TDeps, TInstance>): ServiceEntry<TDeps, TInstance> {
+export function singleton<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
   return {
     service,
     lifeCycle: 'singleton',
   };
 }
 
-export function transient<TDeps, TInstance>(service: Service<TDeps, TInstance>): ServiceEntry<TDeps, TInstance> {
+export function transient<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
   return {
     service,
     lifeCycle: 'transient',
@@ -181,7 +201,7 @@ export function transient<TDeps, TInstance>(service: Service<TDeps, TInstance>):
 }
 
 export function background<TDeps, TInstance extends BackgroundService>(
-  service: Service<TDeps, TInstance>,
+  ...service: Service<TDeps, TInstance>[]
 ): ServiceEntry<TDeps, TInstance> {
   return {
     service,

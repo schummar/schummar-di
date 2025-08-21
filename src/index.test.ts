@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { createContainer, background, singleton, transient, type BackgroundService } from './index';
+import { background, createContainer, singleton, transient, type BackgroundService } from './index';
 
 describe('resolve', () => {
   test('with classes', () => {
@@ -55,6 +55,27 @@ describe('resolve', () => {
 
     const serviceB = container.resolve('serviceB');
     expect(serviceB.value).toBe('ab');
+  });
+
+  test('with decorator pattern', () => {
+    class ServiceA {
+      value = 'a';
+    }
+
+    class ServiceASpecialized implements ServiceA {
+      value;
+      foo = 'var';
+      constructor({ serviceA }: { serviceA: ServiceA }) {
+        this.value = serviceA.value + 'b';
+      }
+    }
+
+    const container = createContainer({
+      serviceA: [ServiceA, ServiceASpecialized],
+    });
+
+    const serviceA = container.resolve('serviceA');
+    expect(serviceA.value).toBe('ab');
   });
 });
 
