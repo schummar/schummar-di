@@ -1,11 +1,10 @@
-import type { O } from 'vitest/dist/chunks/reporters.66aFHiyX.js';
 import { DisposeError, InjectionError } from './errors';
 
 export interface BackgroundService {
   start(): void;
 }
 
-export type LifeCycle = 'singleton' | 'transient' | 'background';
+export type LifeCycle = 'singleton' | 'scoped' | 'transient' | 'background';
 
 export type Service<TDeps, TInstance> = ((deps: TDeps) => TInstance) | (new (deps: TDeps) => TInstance) | TInstance;
 
@@ -14,27 +13,32 @@ export interface ServiceEntry<TDeps, TInstance> {
   lifeCycle: LifeCycle;
 }
 
-export type ServiceMap<TServices> = {
+export type ServiceMap<TServices, TDeps = TServices> = {
   [K in keyof TServices]:
-    | Service<TServices, TServices[K]>
-    | readonly Service<TServices, TServices[K]>[]
-    | ServiceEntry<TServices, TServices[K]>;
+    | Service<TDeps, TServices[K]>
+    | readonly Service<TDeps, TServices[K]>[]
+    | ServiceEntry<TDeps, TServices[K]>;
 };
 
-export function createContainer<TServices extends object>(services: ServiceMap<TServices>): Container<TServices> {
+export function createContainer<TServices extends Record<string | number | symbol, unknown>>(
+  services: ServiceMap<TServices>,
+): Container<TServices> {
   return new Container(services);
 }
 
-export class Container<TServices extends object> implements AsyncDisposable {
+export class Container<TServices extends Record<string | number | symbol, unknown>> implements AsyncDisposable {
   private services: Map<keyof TServices, ServiceEntry<TServices, unknown>>;
   private instances = new Map<keyof TServices, TServices[keyof TServices]>();
   private resolving = new Set<keyof TServices>();
   private disposables = new Map<Disposable | AsyncDisposable, string | number | symbol>();
 
-  constructor(services: ServiceMap<TServices>) {
+  constructor(
+    private serviceMap: ServiceMap<TServices>,
+    private parent?: Container<TServices>,
+  ) {
     this.services = new Map<keyof TServices, ServiceEntry<TServices, unknown>>(
-      Reflect.ownKeys(services).map((key) => {
-        const value = services[key as keyof TServices];
+      Reflect.ownKeys(serviceMap).map((key) => {
+        const value = serviceMap[key as keyof TServices];
         const service =
           typeof value === 'object' && value !== null && 'service' in value && 'lifeCycle' in value
             ? value
@@ -94,6 +98,13 @@ export class Container<TServices extends object> implements AsyncDisposable {
 
     if (!entry) {
       throw new Error(`Service ${String(key)} not found`);
+    }
+
+    if (entry.lifeCycle === 'singleton' || entry.lifeCycle === 'background') {
+      const fromParent = this.parent?.resolve(key, forService);
+      if (fromParent) {
+        return fromParent;
+      }
     }
 
     if (entry.lifeCycle !== 'transient' && this.instances.has(key)) {
@@ -184,12 +195,40 @@ export class Container<TServices extends object> implements AsyncDisposable {
       throw new DisposeError(errors);
     }
   }
+
+  createScope(): Container<TServices> {
+    return new Container<TServices>(this.serviceMap, this);
+  }
+
+  with<TOverrideServices extends Record<string | number | symbol, unknown> = {}>(
+    services: ServiceMap<TOverrideServices, Merged<TServices, TOverrideServices>> & Partial<ServiceMap<TServices>>,
+  ): Container<Merged<TServices, TOverrideServices>> {
+    return new Container({
+      ...this.serviceMap,
+      ...services,
+    } as any);
+  }
 }
+
+type Merged<TServices, TOverrideServices> = {
+  [K in keyof TServices | keyof TOverrideServices]: K extends keyof TOverrideServices
+    ? TOverrideServices[K]
+    : K extends keyof TServices
+      ? TServices[K]
+      : never;
+} & {};
 
 export function singleton<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
   return {
     service,
     lifeCycle: 'singleton',
+  };
+}
+
+export function scoped<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
+  return {
+    service,
+    lifeCycle: 'scoped',
   };
 }
 

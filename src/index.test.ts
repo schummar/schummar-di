@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { background, createContainer, singleton, transient, type BackgroundService } from './index';
+import { background, createContainer, scoped, singleton, transient, type BackgroundService } from './index';
 
 describe('resolve', () => {
   test('with classes', () => {
@@ -100,6 +100,33 @@ describe('life cycle', () => {
     expect(serviceA1).toBe(serviceA2);
     expect(serviceA).toHaveBeenCalledTimes(1);
     expect(serviceB).toHaveBeenCalledTimes(1);
+  });
+
+  test('scoped services are created once per scope', () => {
+    const serviceA = vi.fn(() => ({ value: 'a' }));
+    const serviceB = vi.fn((deps: { serviceA: ReturnType<typeof serviceA> }) => ({
+      value: deps.serviceA.value + 'b',
+    }));
+
+    const c1 = createContainer({
+      serviceA: singleton(serviceA),
+      serviceB: scoped(serviceB),
+    });
+
+    c1.resolve('serviceA');
+    c1.resolve('serviceA');
+    c1.resolve('serviceB');
+    c1.resolve('serviceB');
+    expect(serviceA).toHaveBeenCalledOnce();
+    expect(serviceB).toHaveBeenCalledOnce();
+
+    const c2 = c1.createScope();
+    c2.resolve('serviceA');
+    c2.resolve('serviceA');
+    c2.resolve('serviceB');
+    c2.resolve('serviceB');
+    expect(serviceA).toHaveBeenCalledOnce();
+    expect(serviceB).toHaveBeenCalledTimes(2);
   });
 
   test('transient service is created on each resolve', () => {
@@ -352,5 +379,74 @@ describe('error handling', () => {
     await expect(() => container[Symbol.asyncDispose]()).rejects.toThrowErrorMatchingInlineSnapshot(
       `[DisposeError: 1 error(s) during dispose: Injection error for serviceA: ServiceA error]`,
     );
+  });
+
+  describe('override services', () => {
+    test('overrides an existing service', async () => {
+      class ServiceA {
+        value = 'a';
+      }
+
+      class OtherServiceA implements ServiceA {
+        value = 'other';
+      }
+
+      class ServiceB {
+        value;
+        constructor({ serviceA }: { serviceA: ServiceA }) {
+          this.value = serviceA.value + 'b';
+        }
+      }
+
+      const c1 = createContainer({
+        serviceA: ServiceA,
+        serviceB: ServiceB,
+      });
+
+      const c2 = c1.with({
+        serviceA: OtherServiceA,
+      });
+
+      const serviceB1 = c1.resolve('serviceB');
+      expect(serviceB1.value).toBe('ab');
+
+      const serviceB2 = c2.resolve('serviceB');
+      expect(serviceB2.value).toBe('otherb');
+    });
+
+    test('adds a new service', () => {
+      class ServiceA {
+        value = 'a';
+      }
+
+      class ServiceB {
+        value;
+        constructor({ serviceA }: { serviceA: ServiceA }) {
+          this.value = serviceA.value + 'b';
+        }
+      }
+
+      const c1 = createContainer({
+        serviceA: ServiceA,
+      });
+
+      const c2 = c1.with({
+        serviceB: ServiceB,
+      });
+
+      const serviceB = c2.resolve('serviceB');
+      expect(serviceB.value).toBe('ab');
+    });
+
+    test('cannot override with incompatible type', () => {
+      const c1 = createContainer({
+        serviceA: 1,
+      });
+
+      const _c2 = c1.with({
+        // @ts-expect-error
+        serviceA: '2',
+      });
+    });
   });
 });
