@@ -1,6 +1,25 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "defaultBase": "master",
+
+  "targetDefaults": {
+    "build": {
+      "outputs": ["{projectRoot}/dist"],
+      "cache": true
+    },
+    "publint": {
+      "cache": true
+    },
+    "lint": {
+      "cache": true
+    },
+    "test": {
+      "inputs": ["default", { "env": "CI" }],
+      "outputs": ["{projectRoot}/test-results.xml", "{projectRoot}/coverage"],
+      "cache": true
+    }
+  },
+
   "release": {
     "git": {
       "tag": true,
