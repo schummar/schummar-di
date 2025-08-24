@@ -62,4 +62,5 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm nx release -y --access public
+          NPM_CONFIG_ACCESS: public
+        run: pnpm nx release -y
