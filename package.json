@@ -11,6 +11,7 @@
   ],
   "license": "ISC",
   "author": "Marco Schumacher <marco@schumacher.dev>",
+  "repository": "https://github.com/schummar/schummar-di",
   "files": [
     "dist"
   ],
