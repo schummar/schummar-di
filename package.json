@@ -25,8 +25,7 @@
     "lint:tsc": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "build": "tsdown --clean --format=esm,cjs",
-    "prepublishOnly": "runp lint test build :p publint"
+    "build": "tsdown --clean --format=esm,cjs"
   },
   "keywords": [
     "typescript",
@@ -42,18 +41,18 @@
     "pnpm": "10.6.2"
   },
   "devDependencies": {
-    "@nx/js": "^21.4.1",
-    "@schummar/runp": "^2.2.2",
+    "@nx/js": "^22.4.3",
+    "@schummar/runp": "^2.2.4",
     "@swc-node/register": "^1.11.1",
-    "@swc/core": "^1.13.5",
-    "@vitest/coverage-v8": "^3.2.4",
-    "nx": "^21.4.1",
-    "oxlint": "^1.12.0",
-    "prettier": "^3.6.2",
-    "publint": "^0.3.12",
-    "tsdown": "^0.14.1",
-    "typescript": "^5.9.2",
-    "vitest": "^3.2.4"
+    "@swc/core": "^1.15.11",
+    "@vitest/coverage-v8": "^4.0.18",
+    "nx": "^22.4.3",
+    "oxlint": "^1.42.0",
+    "prettier": "^3.8.1",
+    "publint": "^0.3.17",
+    "tsdown": "^0.20.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "files": [
     "dist"
