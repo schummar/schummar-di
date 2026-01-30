@@ -241,9 +241,7 @@ export function transient<TDeps, TInstance>(...service: Service<TDeps, TInstance
   };
 }
 
-export function background<TDeps, TInstance extends BackgroundService>(
-  ...service: Service<TDeps, TInstance>[]
-): ServiceEntry<TDeps, TInstance> {
+export function background<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
   return {
     service,
     lifeCycle: 'background',
