@@ -4,6 +4,13 @@ on:
     branches:
       - master
 
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  VOLTA_FEATURE_PNPM: 1
+
 jobs:
   release:
     name: Release
@@ -15,17 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.x
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.x
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
+      - uses: volta-cli/action@v4
 
       - name: Install dependencies
         run: pnpm i --frozen-lockfile
@@ -59,7 +56,5 @@ jobs:
 
       - name: Release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm nx release -y
