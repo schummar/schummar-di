@@ -1,5 +1,5 @@
-import { describe, expect, test, vi } from 'vitest';
 import { background, createContainer, scoped, singleton, transient, type BackgroundService } from './index';
+import { describe, expect, test, vi } from 'vitest';
 
 describe('resolve', () => {
   test('with classes', () => {
