@@ -3,7 +3,7 @@ import { DisposeError, InjectionError } from './errors';
 export type GetContainerType<T> = T extends Container<infer U> ? U : never;
 
 export interface BackgroundService {
-  start(): void;
+  start?(): void;
 }
 
 export type LifeCycle = 'singleton' | 'scoped' | 'transient' | 'background';
