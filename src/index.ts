@@ -1,25 +1,40 @@
 import { DisposeError, InjectionError } from './errors';
+import isPromise from './isPromise';
 
 export type GetContainerType<T> = T extends Container<infer U> ? U : never;
 
-export interface BackgroundService {
-  start?(): void;
+export interface BackgroundService<TStartResult = void> {
+  start?(): TStartResult;
 }
 
-export type LifeCycle = 'singleton' | 'scoped' | 'transient' | 'background';
+export const implementations = Symbol('implementations');
+export const lifeCycle = Symbol('lifeCycle');
+export const lifeCycleValues = ['singleton', 'scoped', 'transient', 'background'] as const;
+export type LifeCycle = (typeof lifeCycleValues)[number];
 
-export type Service<TDeps, TInstance> = ((deps: TDeps) => TInstance) | (new (deps: TDeps) => TInstance) | TInstance;
+export interface ServiceFactory<TDeps, TInstance> {
+  (deps: TDeps): TInstance;
+}
 
-export interface ServiceEntry<TDeps, TInstance> {
-  service: Service<TDeps, TInstance> | readonly Service<TDeps, TInstance>[];
-  lifeCycle: LifeCycle;
+export interface ServiceConstructor<TDeps, TInstance> {
+  new (deps: TDeps): TInstance;
+}
+
+export type Service<TDeps, TInstance> =
+  | ServiceFactory<TDeps, TInstance>
+  | ServiceConstructor<TDeps, TInstance>
+  | TInstance;
+
+export interface ServiceDescription<TDeps, TInstance> {
+  [implementations]: readonly ServiceFactory<TDeps, TInstance>[];
+  [lifeCycle]: LifeCycle;
 }
 
 export type ServiceMap<TServices, TDeps = TServices> = {
   [K in keyof TServices]:
     | Service<TDeps, TServices[K]>
     | readonly Service<TDeps, TServices[K]>[]
-    | ServiceEntry<TDeps, TServices[K]>;
+    | ServiceDescription<TDeps, TServices[K]>;
 };
 
 export function createContainer<TServices extends Record<string | number | symbol, unknown>>(
@@ -28,9 +43,16 @@ export function createContainer<TServices extends Record<string | number | symbo
   return new Container(services);
 }
 
+type Resolver<TDeps> = TDeps & {
+  waitUntilStarted<TInstance extends TDeps[keyof TDeps]>(
+    service: TInstance,
+  ): TInstance extends BackgroundService<infer TStartResult> ? TStartResult : never;
+};
+
 export class Container<TServices extends Record<string | number | symbol, unknown>> implements AsyncDisposable {
-  private services: Map<keyof TServices, ServiceEntry<TServices, unknown>>;
+  private services: Map<keyof TServices, ServiceDescription<TServices, unknown>>;
   private instances = new Map<keyof TServices, TServices[keyof TServices]>();
+  private startResults = new Map<unknown, unknown>();
   private resolving = new Set<keyof TServices>();
   private disposables = new Map<Disposable | AsyncDisposable, string | number | symbol>();
 
@@ -38,93 +60,118 @@ export class Container<TServices extends Record<string | number | symbol, unknow
     private serviceMap: ServiceMap<TServices>,
     private parent?: Container<TServices>,
   ) {
-    this.services = new Map<keyof TServices, ServiceEntry<TServices, unknown>>(
+    this.services = new Map<keyof TServices, ServiceDescription<TServices, unknown>>(
       Reflect.ownKeys(serviceMap).map((key) => {
         const value = serviceMap[key as keyof TServices];
-        const service =
-          typeof value === 'object' && value !== null && 'service' in value && 'lifeCycle' in value
-            ? value
-            : { service: value, lifeCycle: 'singleton' };
+        const _implementations = getImplementations(value);
+        const _lifeCycle = getLifeCycle(value);
 
-        return [key as keyof TServices, service as ServiceEntry<TServices, unknown>];
+        return [
+          key as keyof TServices,
+          {
+            [implementations]: _implementations,
+            [lifeCycle]: _lifeCycle,
+          },
+        ];
       }),
     );
 
     for (const [key, entry] of this.services) {
-      if (entry.lifeCycle === 'background') {
-        const instance = this.resolve(key);
-        if (
-          typeof instance === 'object' &&
-          instance !== null &&
-          'start' in instance &&
-          typeof instance.start === 'function'
-        ) {
-          instance.start();
-        }
+      if (entry[lifeCycle] === 'background') {
+        this.resolve(key);
       }
     }
   }
 
-  inject<T>(implementation: Service<TServices, T>): T {
+  inject<T>(service: Service<TServices, T>): T {
+    const [instance, startResult] = this.injectWithStartResult(service);
+
+    if (isPromise(startResult)) {
+      startResult.catch((error) => {
+        console.error(`Error starting service ${String(service)}:`, error);
+      });
+    }
+
+    return instance;
+  }
+
+  injectWithStartResult<T>(
+    service: Service<TServices, T>,
+  ): [instance: T, started: T extends BackgroundService<infer TStartResult> ? TStartResult : void] {
+    service = normalizeService(service);
     const resolvedServices = new Map<keyof TServices, TServices[keyof TServices]>();
 
-    const resolver = new Proxy<TServices>({} as any, {
-      get: (_target, p) => {
-        let service = resolvedServices.get(p as keyof TServices);
-        if (!service) {
-          service = this.resolve(p as keyof TServices, implementation);
-          resolvedServices.set(p as keyof TServices, service);
-        }
+    const resolver = new Proxy<Resolver<TServices>>(
+      {
+        waitUntilStarted: (service: unknown): unknown => {
+          return this.startService(service);
+        },
+      } as Resolver<any>,
+      {
+        get: (target, p) => {
+          if (p in target) {
+            return (target as any)[p];
+          }
 
-        return service;
+          let service = resolvedServices.get(p as keyof TServices);
+          if (!service) {
+            service = this.resolve(p as keyof TServices, service);
+            resolvedServices.set(p as keyof TServices, service);
+          }
+
+          return service;
+        },
       },
-    });
+    );
 
-    if (typeof implementation === 'function') {
-      try {
-        return (implementation as (deps: TServices) => T)(resolver);
-      } catch (error) {
-        if (error instanceof TypeError && error.message.includes(`cannot be invoked without 'new'`)) {
-          return new (implementation as new (deps: TServices) => T)(resolver);
-        }
+    const instance = service(resolver);
+    const startResult = this.startService(instance);
 
-        throw error;
-      }
-    } else {
-      return implementation;
+    return [instance, startResult];
+  }
+
+  private startService<TService>(
+    service: TService,
+  ): TService extends BackgroundService<infer TStartResult> ? TStartResult : void {
+    if (this.startResults.has(service)) {
+      return this.startResults.get(service) as any;
     }
+
+    if (typeof service === 'object' && service !== null && 'start' in service && typeof service.start === 'function') {
+      const startResult = service.start();
+      this.startResults.set(service, startResult);
+      return startResult as any;
+    }
+
+    return undefined as any;
   }
 
   resolve<Key extends keyof TServices>(key: Key, forService?: Service<TServices, unknown>): TServices[Key] {
-    const entry = this.services.get(key) as ServiceEntry<TServices, TServices[Key]> | undefined;
+    const entry = this.services.get(key) as ServiceDescription<TServices, TServices[Key]> | undefined;
 
     if (!entry) {
       throw new Error(`Service ${String(key)} not found`);
     }
 
-    if (entry.lifeCycle === 'singleton' || entry.lifeCycle === 'background') {
-      const fromParent = this.parent?.resolve(key, forService);
+    if (this.parent && (entry[lifeCycle] === 'singleton' || entry[lifeCycle] === 'background')) {
+      const fromParent = this.parent.resolve(key, forService);
       if (fromParent) {
         return fromParent;
       }
     }
 
-    if (entry.lifeCycle !== 'transient' && this.instances.has(key)) {
+    if (entry[lifeCycle] !== 'transient' && this.instances.has(key)) {
       return this.instances.get(key) as TServices[Key];
     }
 
     let service: Service<TServices, TServices[Key]> | undefined;
     let isResolvingNested = false;
-    if (Array.isArray(entry?.service)) {
-      const index = forService ? entry.service.findIndex((s) => s === forService) : -1;
-      if (index !== -1) {
-        service = entry.service[index - 1];
-        isResolvingNested = true;
-      } else {
-        service = entry.service.at(-1);
-      }
+    const index = forService ? entry[implementations].findIndex((s) => s === forService) : -1;
+    if (index !== -1) {
+      service = entry[implementations][index - 1];
+      isResolvingNested = true;
     } else {
-      service = entry?.service as Service<TServices, TServices[Key]>;
+      service = entry[implementations].at(-1);
     }
 
     if (!service) {
@@ -142,7 +189,7 @@ export class Container<TServices extends Record<string | number | symbol, unknow
 
       const instance = this.inject(service);
 
-      if (entry.lifeCycle !== 'transient') {
+      if (entry[lifeCycle] !== 'transient') {
         this.instances.set(key, instance);
       }
 
@@ -220,31 +267,39 @@ type Merged<TServices, TOverrideServices> = {
       : never;
 } & {};
 
-export function singleton<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
+export function singleton<TDeps, TInstance>(
+  ...service: Service<TDeps, TInstance>[]
+): ServiceDescription<TDeps, TInstance> {
   return {
-    service,
-    lifeCycle: 'singleton',
+    [implementations]: service.map(normalizeService),
+    [lifeCycle]: 'singleton',
   };
 }
 
-export function scoped<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
+export function scoped<TDeps, TInstance>(
+  ...service: Service<TDeps, TInstance>[]
+): ServiceDescription<TDeps, TInstance> {
   return {
-    service,
-    lifeCycle: 'scoped',
+    [implementations]: service.map(normalizeService),
+    [lifeCycle]: 'scoped',
   };
 }
 
-export function transient<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
+export function transient<TDeps, TInstance>(
+  ...service: Service<TDeps, TInstance>[]
+): ServiceDescription<TDeps, TInstance> {
   return {
-    service,
-    lifeCycle: 'transient',
+    [implementations]: service.map(normalizeService),
+    [lifeCycle]: 'transient',
   };
 }
 
-export function background<TDeps, TInstance>(...service: Service<TDeps, TInstance>[]): ServiceEntry<TDeps, TInstance> {
+export function background<TDeps, TInstance>(
+  ...service: Service<TDeps, TInstance>[]
+): ServiceDescription<TDeps, TInstance> {
   return {
-    service,
-    lifeCycle: 'background',
+    [implementations]: service.map(normalizeService),
+    [lifeCycle]: 'background',
   };
 }
 
@@ -254,4 +309,54 @@ function isDisposable(obj: unknown): obj is Disposable | AsyncDisposable {
     obj !== null &&
     ((Symbol.dispose && Symbol.dispose in obj) || (Symbol.asyncDispose && Symbol.asyncDispose in obj))
   );
+}
+
+function normalizeService<TServices, TInstance>(
+  service: Service<TServices, TInstance>,
+): ServiceFactory<TServices, TInstance> {
+  if (typeof service === 'function') {
+    return (deps: TServices) => {
+      try {
+        return (service as (deps: TServices) => TInstance)(deps);
+      } catch (error) {
+        if (error instanceof TypeError && error.message.includes(`cannot be invoked without 'new'`)) {
+          return new (service as new (deps: TServices) => TInstance)(deps);
+        }
+
+        throw error;
+      }
+    };
+  }
+
+  return () => service;
+}
+
+function getImplementations<TServices, TInstance>(
+  service:
+    | Service<TServices, TInstance>
+    | readonly Service<TServices, TInstance>[]
+    | ServiceDescription<TServices, TInstance>,
+): readonly ServiceFactory<TServices, TInstance>[] {
+  if (typeof service === 'object' && service !== null && implementations in service) {
+    return service[implementations] as readonly ServiceFactory<TServices, TInstance>[];
+  }
+
+  if (Array.isArray(service)) {
+    return service.map(normalizeService);
+  }
+
+  return [normalizeService(service as Service<TServices, TInstance>)];
+}
+
+function getLifeCycle<TServices>(service: Service<TServices, unknown>): LifeCycle {
+  if (
+    typeof service === 'object' &&
+    service !== null &&
+    lifeCycle in service &&
+    (lifeCycleValues as readonly unknown[]).includes(service[lifeCycle])
+  ) {
+    return service[lifeCycle] as LifeCycle;
+  }
+
+  return 'singleton';
 }
