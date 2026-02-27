@@ -375,7 +375,7 @@ describe('error handling', () => {
     expect(() => container.resolve('serviceA')).toThrowError(/ServiceA error/);
   });
 
-  test('resports start errors', async () => {
+  test('reports start errors', async () => {
     class ServiceA {
       async start() {
         throw new Error('ServiceA error');
@@ -386,10 +386,10 @@ describe('error handling', () => {
       serviceA: background(ServiceA),
     });
 
-    container.resolve('serviceA');
-    await expect(() =>
-      container.waitUntilStarted(container.resolve('serviceA')),
-    ).rejects.toThrowErrorMatchingInlineSnapshot(`[StartError: Start error for serviceA: ServiceA error]`);
+    const serviceA = container.resolve('serviceA');
+    await expect(() => container.waitUntilStarted(serviceA)).rejects.toThrowErrorMatchingInlineSnapshot(
+      `[StartError: Start error for serviceA: ServiceA error]`,
+    );
   });
 
   test('reports dipose errors', async () => {

@@ -17,7 +17,7 @@ export class StartError extends Error {
     public readonly instance: unknown,
     public readonly cause: unknown,
   ) {
-    super(`Start error for ${String(key)}: ${errorToString(cause)}`);
+    super(`Start error${key !== undefined ? ` for ${String(key)}` : ''}: ${errorToString(cause)}`);
   }
 }
 
@@ -33,7 +33,10 @@ export class DisposeError extends Error {
   ) {
     super(
       `${errors.length} error(s) during dispose: ${errors
-        .map(({ key, cause }) => `Injection error for ${String(key)}: ${errorToString(cause)}`)
+        .map(
+          ({ key, cause }) =>
+            `Injection error${key !== undefined ? ` for ${String(key)}` : ''}: ${errorToString(cause)}`,
+        )
         .join(', ')}`,
     );
   }

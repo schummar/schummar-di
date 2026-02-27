@@ -95,28 +95,25 @@ export class Container<TServices> implements AsyncDisposable {
 
   inject<T>(service: Service<TServices, T>, key?: string | number | symbol): T {
     service = normalizeService(service);
-    const resolvedServices = new Map<keyof TServices, TServices[keyof TServices]>();
+    const resolvedServices = new Map<string | symbol, unknown>([['container', this]]);
 
-    const resolver = new Proxy<Resolver<TServices>>(
-      {
-        container: this,
-      } as Resolver<TServices>,
-      {
-        get: (target, p) => {
-          if (p in target) {
-            return (target as any)[p];
-          }
+    const resolver = new Proxy<Resolver<TServices>>({} as Resolver<TServices>, {
+      get: (_target, p) => {
+        let resolvedService = resolvedServices.get(p);
 
-          let resolvedService = resolvedServices.get(p as keyof TServices);
-          if (!resolvedService) {
+        if (!resolvedService) {
+          if (this.services.has(p as keyof TServices)) {
             resolvedService = this.resolve(p as keyof TServices, service);
-            resolvedServices.set(p as keyof TServices, resolvedService);
+          } else {
+            resolvedService = undefined;
           }
 
-          return resolvedService;
-        },
+          resolvedServices.set(p, resolvedService);
+        }
+
+        return resolvedService;
       },
-    );
+    });
 
     const instance = service(resolver);
     this.instanceMeta.set(instance, { key });
@@ -182,8 +179,7 @@ export class Container<TServices> implements AsyncDisposable {
     const entry = this.services.get(key) as ServiceDescription<TServices, TServices[Key]> | undefined;
 
     if (!entry) {
-      // throw new Error(`Service ${String(key)} not found`);
-      return undefined as any;
+      throw new Error(`Service ${String(key)} not found`);
     }
 
     if (this.parent && (entry.lifeCycle === 'singleton' || entry.lifeCycle === 'background')) {
