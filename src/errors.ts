@@ -9,12 +9,24 @@ export class InjectionError extends Error {
   }
 }
 
+export class StartError extends Error {
+  name = 'StartError';
+
+  constructor(
+    public readonly key: string | number | symbol | undefined,
+    public readonly instance: unknown,
+    public readonly cause: unknown,
+  ) {
+    super(`Start error for ${String(key)}: ${errorToString(cause)}`);
+  }
+}
+
 export class DisposeError extends Error {
   name = 'DisposeError';
 
   constructor(
     public readonly errors: {
-      key: string | number | symbol;
+      key?: string | number | symbol;
       instance: unknown;
       cause: unknown;
     }[],
