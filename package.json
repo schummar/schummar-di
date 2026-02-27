@@ -21,8 +21,8 @@
   "types": "./dist/index.d.cts",
   "exports": {
     ".": {
-      "require": "./dist/index.cjs",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -38,22 +38,22 @@
     "build": "tsdown --clean --format=esm,cjs --exports"
   },
   "devDependencies": {
-    "@nx/js": "^22.4.3",
+    "@nx/js": "^22.5.3",
     "@schummar/runp": "^2.2.4",
     "@swc-node/register": "^1.11.1",
-    "@swc/core": "^1.15.11",
+    "@swc/core": "^1.15.17",
     "@vitest/coverage-v8": "^4.0.18",
-    "nx": "^22.4.3",
-    "oxfmt": "^0.27.0",
-    "oxlint": "^1.42.0",
-    "oxlint-tsgolint": "^0.11.3",
+    "nx": "^22.5.3",
+    "oxfmt": "^0.35.0",
+    "oxlint": "^1.50.0",
+    "oxlint-tsgolint": "^0.15.0",
     "publint": "^0.3.17",
-    "tsdown": "^0.20.1",
+    "tsdown": "0.21.0-beta.2",
     "vitest": "^4.0.18"
   },
   "volta": {
-    "node": "24.13.0",
-    "npm": "11.8.0",
-    "pnpm": "10.28.2"
+    "node": "24.14.0",
+    "npm": "11.11.0",
+    "pnpm": "10.30.3"
   }
 }
