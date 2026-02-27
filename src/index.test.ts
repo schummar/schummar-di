@@ -1,4 +1,12 @@
-import { background, createContainer, scoped, singleton, transient, type BackgroundService } from './index';
+import {
+  background,
+  createContainer,
+  scoped,
+  singleton,
+  transient,
+  type BackgroundService,
+  type Resolver,
+} from './index';
 import { describe, expect, test, vi } from 'vitest';
 
 describe('resolve', () => {
@@ -154,7 +162,9 @@ describe('life cycle', () => {
   test('transient service is only created once for one service', () => {
     const serviceA = vi.fn(() => ({ value: 'a' }));
     const serviceB = vi.fn((deps: { serviceA: ReturnType<typeof serviceA> }) => {
+      // oxlint-disable-next-line no-unused-expressions
       deps.serviceA;
+      // oxlint-disable-next-line no-unused-expressions
       deps.serviceA;
     });
 
@@ -203,12 +213,14 @@ describe('circular dependencies', () => {
   test('throws on circular dependency', () => {
     class ServiceA {
       constructor(private deps: { serviceB: ServiceB }) {
+        // oxlint-disable-next-line no-unused-expressions
         deps.serviceB;
       }
     }
 
     class ServiceB {
       constructor(private deps: { serviceA: ServiceA }) {
+        // oxlint-disable-next-line no-unused-expressions
         deps.serviceA;
       }
     }
@@ -336,6 +348,7 @@ describe('error handling', () => {
     }
     class ServiceB {
       constructor(private deps: { serviceA: ServiceA }) {
+        // oxlint-disable-next-line no-unused-expressions
         deps.serviceA;
       }
     }
@@ -360,6 +373,23 @@ describe('error handling', () => {
     });
 
     expect(() => container.resolve('serviceA')).toThrowError(/ServiceA error/);
+  });
+
+  test('reports start errors', async () => {
+    class ServiceA {
+      async start() {
+        throw new Error('ServiceA error');
+      }
+    }
+
+    const container = createContainer({
+      serviceA: background(ServiceA),
+    });
+
+    const serviceA = container.resolve('serviceA');
+    await expect(() => container.waitUntilStarted(serviceA)).rejects.toThrowErrorMatchingInlineSnapshot(
+      `[StartError: Start error for serviceA: ServiceA error]`,
+    );
   });
 
   test('reports dipose errors', async () => {
@@ -448,5 +478,74 @@ describe('error handling', () => {
         serviceA: '2',
       });
     });
+  });
+});
+
+describe('async services', () => {
+  test('async factory', async () => {
+    type ServiceA = ReturnType<typeof serviceA>;
+
+    async function serviceA() {
+      return 'a';
+    }
+
+    async function serviceB({ serviceA }: { serviceA: ServiceA }) {
+      const a = await serviceA;
+      return a + 'b';
+    }
+
+    const container = createContainer({
+      serviceA,
+      serviceB,
+    });
+
+    const result = container.resolve('serviceB');
+    await expect(result).resolves.toBe('ab');
+  });
+
+  test(`wait for other service's start`, async () => {
+    class ServiceA {
+      async start() {
+        return 'a';
+      }
+    }
+
+    class ServiceB {
+      constructor(private deps: Resolver<{ serviceA: ServiceA }>) {}
+
+      async start() {
+        const a = await this.deps.container.waitUntilStarted(this.deps.serviceA);
+        return a + 'b';
+      }
+    }
+
+    const container = createContainer({
+      serviceA: ServiceA,
+      serviceB: ServiceB,
+    });
+
+    const serviceB = container.resolve('serviceB');
+    const result = container.waitUntilStarted(serviceB);
+    await expect(result).resolves.toBe('ab');
+  });
+});
+
+describe('dispose async services', () => {
+  test('dispose async services', async () => {
+    const disposeFn = vi.fn();
+
+    async function ServiceA() {
+      return {
+        [Symbol.asyncDispose]: disposeFn,
+      };
+    }
+
+    {
+      await using _container = createContainer({
+        serviceA: background(ServiceA),
+      });
+    }
+
+    expect(disposeFn).toHaveBeenCalledOnce();
   });
 });
