@@ -11,6 +11,8 @@ export const di = Symbol('di');
 export const lifeCycleValues = ['singleton', 'scoped', 'transient', 'background'] as const;
 export type LifeCycle = (typeof lifeCycleValues)[number];
 
+type Value<T> = { v: T };
+
 export interface ServiceFactory<TDeps, TInstance> {
   (deps: Resolver<TDeps>): TInstance;
 }
@@ -27,6 +29,10 @@ export type Service<TDeps, TInstance> =
 export interface ServiceDescription<TDeps, TInstance> {
   implementations: readonly ServiceFactory<TDeps, TInstance>[];
   lifeCycle: LifeCycle;
+}
+
+interface ServiceEntry<TDeps, TInstance> extends ServiceDescription<TDeps, TInstance> {
+  instances?: Value<TInstance>[];
 }
 
 export type ServiceMap<TServices, TDeps = TServices> = {
@@ -55,8 +61,8 @@ export function createContainer<TServices>(services: ServiceMap<TServices>): ICo
 }
 
 export class Container<TServices> implements AsyncDisposable {
-  private services: Map<keyof TServices, ServiceDescription<TServices, unknown>>;
-  private instances = new Map<keyof TServices, TServices[keyof TServices]>();
+  private services: Map<keyof TServices, ServiceEntry<TServices, unknown>>;
+
   private instanceMeta = new Map<
     unknown,
     {
@@ -64,13 +70,14 @@ export class Container<TServices> implements AsyncDisposable {
       startResult?: unknown;
     }
   >();
-  private resolving = new Set<keyof TServices>();
+
+  private resolving = new Set<string>();
 
   constructor(
     private serviceMap: ServiceMap<TServices>,
     private parent?: Container<TServices>,
   ) {
-    this.services = new Map<keyof TServices, ServiceDescription<TServices, unknown>>(
+    this.services = new Map(
       Reflect.ownKeys(serviceMap).map((key) => {
         const value = serviceMap[key as keyof TServices];
         const implementations = getImplementations(value);
@@ -93,7 +100,10 @@ export class Container<TServices> implements AsyncDisposable {
     }
   }
 
-  inject<T>(service: Service<TServices, T>, key?: string | number | symbol): T {
+  inject<T>(
+    service: Service<TServices, T>,
+    { key, index }: { key?: string | number | symbol; index?: number } = {},
+  ): T {
     service = normalizeService(service);
     const resolvedServices = new Map<string | symbol, unknown>([['container', this]]);
 
@@ -103,7 +113,8 @@ export class Container<TServices> implements AsyncDisposable {
 
         if (!resolvedService) {
           if (this.services.has(p as keyof TServices)) {
-            resolvedService = this.resolve(p as keyof TServices, service);
+            const nextIndex = index === undefined ? -1 : index >= 1 ? index - 1 : 0;
+            resolvedService = this.resolve(p as keyof TServices, nextIndex);
           } else {
             resolvedService = undefined;
           }
@@ -175,51 +186,61 @@ export class Container<TServices> implements AsyncDisposable {
     return undefined as any;
   }
 
-  resolve<Key extends keyof TServices>(key: Key, forService?: Service<TServices, unknown>): TServices[Key] {
-    const entry = this.services.get(key) as ServiceDescription<TServices, TServices[Key]> | undefined;
+  resolveAll<Key extends keyof TServices>(key: Key): TServices[Key][] {
+    const instances: TServices[Key][] = [];
+    const count = this.services.get(key)?.implementations.length ?? 0;
+
+    for (let i = 0; i < count; i++) {
+      instances.push(this.resolve(key, i));
+    }
+
+    return instances;
+  }
+
+  resolve<Key extends keyof TServices>(key: Key, index = -1): TServices[Key] {
+    const entry = this.services.get(key) as ServiceEntry<TServices, TServices[Key]> | undefined;
 
     if (!entry) {
       throw new Error(`Service ${String(key)} not found`);
     }
 
+    if (index < 0) {
+      index = entry.implementations.length + index;
+    }
+
     if (this.parent && (entry.lifeCycle === 'singleton' || entry.lifeCycle === 'background')) {
-      const fromParent = this.parent.resolve(key, forService);
-      if (fromParent) {
-        return fromParent;
+      try {
+        return this.parent.resolve(key, index);
+      } catch {
+        // ignore and resolve in current container
       }
     }
 
-    if (entry.lifeCycle !== 'transient' && this.instances.has(key)) {
-      return this.instances.get(key) as TServices[Key];
+    if (entry.lifeCycle !== 'transient' && entry.instances?.[index]) {
+      return entry.instances[index].v as TServices[Key];
     }
 
-    let service: Service<TServices, TServices[Key]> | undefined;
-    let isResolvingNested = false;
-    const index = forService ? entry.implementations.findIndex((s) => s === forService) : -1;
-    if (index !== -1) {
-      service = entry.implementations[index - 1];
-      isResolvingNested = true;
-    } else {
-      service = entry.implementations.at(-1);
-    }
+    const service = entry.implementations.at(index);
 
     if (!service) {
       throw new Error(`Service ${String(key)} not found`);
     }
 
-    if (!isResolvingNested && this.resolving.has(key)) {
+    const resolverKey = JSON.stringify([key, index]);
+    if (this.resolving.has(resolverKey)) {
       throw new Error(
-        `Circular dependency detected: ${[...this.resolving].join(' -> ')} -> ${String(key)}. Access the dependency after the constructor to avoid this error.`,
+        `Circular dependency detected: ${[...this.resolving].join(' -> ')} -> ${resolverKey}. Access the dependency after the constructor to avoid this error.`,
       );
     }
 
     try {
-      this.resolving.add(key);
+      this.resolving.add(resolverKey);
 
-      const instance = this.inject(service, key);
+      const instance = this.inject(service, { key, index });
 
       if (entry.lifeCycle !== 'transient') {
-        this.instances.set(key, instance);
+        entry.instances ??= [];
+        entry.instances[index] = { v: instance };
       }
 
       return instance;
@@ -230,7 +251,7 @@ export class Container<TServices> implements AsyncDisposable {
 
       throw new InjectionError([...this.resolving], error);
     } finally {
-      this.resolving.delete(key);
+      this.resolving.delete(resolverKey);
     }
   }
 
@@ -270,7 +291,10 @@ export class Container<TServices> implements AsyncDisposable {
       }
     }
 
-    this.instances.clear();
+    for (const entry of this.services.values()) {
+      delete entry.instances;
+    }
+
     this.instanceMeta.clear();
 
     await Promise.all(promises);

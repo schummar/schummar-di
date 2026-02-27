@@ -230,8 +230,8 @@ describe('circular dependencies', () => {
       serviceB: ServiceB,
     });
 
-    expect(() => container.resolve('serviceA')).toThrowError(
-      /Circular dependency detected: serviceA -> serviceB -> serviceA/,
+    expect(() => container.resolve('serviceA')).toThrowErrorMatchingInlineSnapshot(
+      `[InjectionError: Injection error for ["serviceA",0] -> ["serviceB",0]: Circular dependency detected: ["serviceA",0] -> ["serviceB",0] -> ["serviceA",0]. Access the dependency after the constructor to avoid this error.]`,
     );
   });
 
@@ -359,7 +359,7 @@ describe('error handling', () => {
     });
 
     expect(() => container.resolve('serviceB')).toThrowErrorMatchingInlineSnapshot(
-      `[InjectionError: Injection error for serviceB -> serviceA: ServiceA error]`,
+      `[InjectionError: Injection error for ["serviceB",0] -> ["serviceA",0]: ServiceA error]`,
     );
   });
 
@@ -547,5 +547,37 @@ describe('dispose async services', () => {
     }
 
     expect(disposeFn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('resolve multiple instances', () => {
+  test('resolves multiple instances from container', () => {
+    const a = () => 1;
+    const b = () => 2;
+    const c = () => 3;
+    const container = createContainer({
+      numbers: [a, b, c],
+    });
+
+    const numbers = container.resolveAll('numbers');
+    expect(numbers).toEqual([1, 2, 3]);
+  });
+
+  test('resolves multiple instances in service', () => {
+    const a = () => 1;
+    const b = () => 2;
+    const c = () => 3;
+
+    function sum({ container }: Resolver<{ numbers: number }>) {
+      return container.resolveAll('numbers').reduce((acc, n) => acc + n, 0);
+    }
+
+    const container = createContainer({
+      numbers: [a, b, c],
+      sum,
+    });
+
+    const result = container.resolve('sum');
+    expect(result).toBe(6);
   });
 });
