@@ -113,7 +113,7 @@ export class Container<TServices> implements AsyncDisposable {
 
         if (!resolvedService) {
           if (this.services.has(p as keyof TServices)) {
-            const nextIndex = index === undefined ? -1 : index >= 1 ? index - 1 : 0;
+            const nextIndex = p !== key || index === undefined ? undefined : index >= 1 ? index - 1 : 0;
             resolvedService = this.resolve(p as keyof TServices, nextIndex);
           } else {
             resolvedService = undefined;
@@ -201,6 +201,7 @@ export class Container<TServices> implements AsyncDisposable {
     const entry = this.services.get(key) as ServiceEntry<TServices, TServices[Key]> | undefined;
 
     if (!entry) {
+      console.log(this.services);
       throw new Error(`Service ${String(key)} not found`);
     }
 
@@ -221,12 +222,12 @@ export class Container<TServices> implements AsyncDisposable {
     }
 
     const service = entry.implementations.at(index);
+    const resolverKey = JSON.stringify([key, index]);
 
     if (!service) {
-      throw new Error(`Service ${String(key)} not found`);
+      throw new Error(`Service ${resolverKey} not found`);
     }
 
-    const resolverKey = JSON.stringify([key, index]);
     if (this.resolving.has(resolverKey)) {
       throw new Error(
         `Circular dependency detected: ${[...this.resolving].join(' -> ')} -> ${resolverKey}. Access the dependency after the constructor to avoid this error.`,

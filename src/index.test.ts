@@ -580,4 +580,18 @@ describe('resolve multiple instances', () => {
     const result = container.resolve('sum');
     expect(result).toBe(6);
   });
+
+  test('resolves multiple instances with dependencies', () => {
+    const a = ({ base }: { base: number }) => base + 1;
+    const b = ({ base }: { base: number }) => base + 2;
+    const c = ({ base }: { base: number }) => base + 3;
+
+    const container = createContainer({
+      numbers: [a, b, c],
+      base: 10,
+    });
+
+    const numbers = container.resolveAll('numbers');
+    expect(numbers).toEqual([11, 12, 13]);
+  });
 });
