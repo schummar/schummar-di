@@ -1,6 +1,7 @@
 import {
   background,
   createContainer,
+  Injectable,
   scoped,
   singleton,
   transient,
@@ -593,5 +594,21 @@ describe('resolve multiple instances', () => {
 
     const numbers = container.resolveAll('numbers');
     expect(numbers).toEqual([11, 12, 13]);
+  });
+});
+
+describe('Injectable', () => {
+  test('can be extended by classes', () => {
+    class ServiceA extends Injectable<{ value: string }> {
+      value = this.deps.value;
+    }
+
+    const container = createContainer({
+      serviceA: ServiceA,
+      value: 'test',
+    });
+
+    const serviceA = container.resolve('serviceA');
+    expect(serviceA.value).toBe('test');
   });
 });

@@ -427,3 +427,7 @@ function getLifeCycle<TServices>(service: Service<TServices, unknown>): LifeCycl
 
   return 'singleton';
 }
+
+export abstract class Injectable<TDeps> {
+  constructor(protected readonly deps: TDeps) {}
+}
