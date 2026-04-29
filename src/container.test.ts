@@ -1,13 +1,7 @@
-import {
-  background,
-  createContainer,
-  Injectable,
-  scoped,
-  singleton,
-  transient,
-  type BackgroundService,
-  type Resolver,
-} from './index';
+import { createContainer } from './container';
+import { Injectable } from './injectable';
+import { background, scoped, singleton, transient } from './serviceDescriptionHelpers';
+import type { BackgroundService, IContainer } from './types';
 import { describe, expect, test, vi } from 'vitest';
 
 describe('resolve', () => {
@@ -66,6 +60,15 @@ describe('resolve', () => {
     expect(serviceB.value).toBe('ab');
   });
 
+  test('with arrays', () => {
+    const container = createContainer({
+      value: [1, 2, 3],
+    });
+
+    const value = container.resolve('value');
+    expect(value).toEqual([1, 2, 3]);
+  });
+
   test('with decorator pattern', () => {
     class ServiceA {
       value = 'a';
@@ -73,14 +76,13 @@ describe('resolve', () => {
 
     class ServiceASpecialized implements ServiceA {
       value;
-      foo = 'var';
       constructor({ serviceA }: { serviceA: ServiceA }) {
         this.value = serviceA.value + 'b';
       }
     }
 
     const container = createContainer({
-      serviceA: [ServiceA, ServiceASpecialized],
+      serviceA: singleton(ServiceA, ServiceASpecialized),
     });
 
     const serviceA = container.resolve('serviceA');
@@ -232,7 +234,7 @@ describe('circular dependencies', () => {
     });
 
     expect(() => container.resolve('serviceA')).toThrowErrorMatchingInlineSnapshot(
-      `[InjectionError: Injection error for ["serviceA",0] -> ["serviceB",0]: Circular dependency detected: ["serviceA",0] -> ["serviceB",0] -> ["serviceA",0]. Access the dependency after the constructor to avoid this error.]`,
+      `[CircularDependencyError: Circular dependency detected: ["serviceA",0] -> ["serviceB",0] -> ["serviceA",0]. Access the dependency after the constructor to avoid this error.]`,
     );
   });
 
@@ -393,7 +395,7 @@ describe('error handling', () => {
     );
   });
 
-  test('reports dipose errors', async () => {
+  test('reports dispose errors', async () => {
     const disposeA = vi.fn(() => {
       throw new Error('ServiceA error');
     });
@@ -408,77 +410,110 @@ describe('error handling', () => {
 
     container.resolve('serviceA');
     await expect(() => container[Symbol.asyncDispose]()).rejects.toThrowErrorMatchingInlineSnapshot(
-      `[DisposeError: 1 error(s) during dispose: Injection error for serviceA: ServiceA error]`,
+      `[DisposeError: 1 error(s) during dispose: Error for serviceA: ServiceA error]`,
     );
   });
 
-  describe('override services', () => {
-    test('overrides an existing service', async () => {
-      class ServiceA {
-        value = 'a';
+  test('reports service not found errors', () => {
+    const container = createContainer<any>({});
+
+    expect(() => container.resolve('nonExistentService')).toThrowErrorMatchingInlineSnapshot(
+      `[ServiceNotFoundError: Service not found: nonExistentService.]`,
+    );
+  });
+});
+
+describe('override services', () => {
+  test('overrides an existing service', async () => {
+    class ServiceA {
+      value = 'a';
+    }
+
+    class OtherServiceA implements ServiceA {
+      value = 'other';
+    }
+
+    class ServiceB {
+      value;
+      constructor({ serviceA }: { serviceA: ServiceA }) {
+        this.value = serviceA.value + 'b';
       }
+    }
 
-      class OtherServiceA implements ServiceA {
-        value = 'other';
-      }
-
-      class ServiceB {
-        value;
-        constructor({ serviceA }: { serviceA: ServiceA }) {
-          this.value = serviceA.value + 'b';
-        }
-      }
-
-      const c1 = createContainer({
-        serviceA: ServiceA,
-        serviceB: ServiceB,
-      });
-
-      const c2 = c1.with({
-        serviceA: OtherServiceA,
-      });
-
-      const serviceB1 = c1.resolve('serviceB');
-      expect(serviceB1.value).toBe('ab');
-
-      const serviceB2 = c2.resolve('serviceB');
-      expect(serviceB2.value).toBe('otherb');
+    const c1 = createContainer({
+      serviceA: ServiceA,
+      serviceB: ServiceB,
     });
 
-    test('adds a new service', () => {
-      class ServiceA {
-        value = 'a';
-      }
-
-      class ServiceB {
-        value;
-        constructor({ serviceA }: { serviceA: ServiceA }) {
-          this.value = serviceA.value + 'b';
-        }
-      }
-
-      const c1 = createContainer({
-        serviceA: ServiceA,
-      });
-
-      const c2 = c1.with({
-        serviceB: ServiceB,
-      });
-
-      const serviceB = c2.resolve('serviceB');
-      expect(serviceB.value).toBe('ab');
+    const c2 = c1.with({
+      serviceA: OtherServiceA,
     });
 
-    test('cannot override with incompatible type', () => {
-      const c1 = createContainer({
-        serviceA: 1,
-      });
+    const serviceB1 = c1.resolve('serviceB');
+    expect(serviceB1.value).toBe('ab');
 
-      const _c2 = c1.with({
-        // @ts-expect-error
-        serviceA: '2',
-      });
+    const serviceB2 = c2.resolve('serviceB');
+    expect(serviceB2.value).toBe('otherb');
+  });
+
+  test('adds a new service', () => {
+    class ServiceA {
+      value = 'a';
+    }
+
+    class ServiceB {
+      value;
+      constructor({ serviceA }: { serviceA: ServiceA }) {
+        this.value = serviceA.value + 'b';
+      }
+    }
+
+    const c1 = createContainer({
+      serviceA: ServiceA,
     });
+
+    const c2 = c1.with({
+      serviceB: ServiceB,
+    });
+
+    const serviceB = c2.resolve('serviceB');
+    expect(serviceB.value).toBe('ab');
+  });
+
+  test('cannot override with incompatible type', () => {
+    const c1 = createContainer({
+      serviceA: 1,
+    });
+
+    const _c2 = c1.with({
+      // @ts-expect-error
+      serviceA: '2',
+    });
+  });
+
+  test('decorate service', () => {
+    class ServiceA {
+      value = 'a';
+    }
+
+    class ServiceASpecialized implements ServiceA {
+      value;
+      constructor({ serviceA }: { serviceA: ServiceA }) {
+        this.value = serviceA.value + 'b';
+      }
+    }
+
+    const c1 = createContainer({
+      serviceA: ServiceA,
+    });
+
+    const c2 = c1.with({
+      serviceA: ServiceASpecialized,
+    });
+
+    const decoratedServiceA = c2.resolve('serviceA');
+
+    expect(decoratedServiceA.value).toBe('ab');
   });
 });
 
@@ -512,10 +547,13 @@ describe('async services', () => {
     }
 
     class ServiceB {
-      constructor(private deps: Resolver<{ serviceA: ServiceA }>) {}
+      constructor(
+        private resolve: { serviceA: ServiceA },
+        private container: IContainer<{ serviceA: ServiceA }>,
+      ) {}
 
       async start() {
-        const a = await this.deps.container.waitUntilStarted(this.deps.serviceA);
+        const a = await this.container?.waitUntilStarted(this.resolve.serviceA);
         return a + 'b';
       }
     }
@@ -557,7 +595,7 @@ describe('resolve multiple instances', () => {
     const b = () => 2;
     const c = () => 3;
     const container = createContainer({
-      numbers: [a, b, c],
+      numbers: singleton(a, b, c),
     });
 
     const numbers = container.resolveAll('numbers');
@@ -569,12 +607,12 @@ describe('resolve multiple instances', () => {
     const b = () => 2;
     const c = () => 3;
 
-    function sum({ container }: Resolver<{ numbers: number }>) {
+    function sum(_: {}, container: IContainer<{ numbers: number }>) {
       return container.resolveAll('numbers').reduce((acc, n) => acc + n, 0);
     }
 
     const container = createContainer({
-      numbers: [a, b, c],
+      numbers: singleton(a, b, c),
       sum,
     });
 
@@ -588,7 +626,7 @@ describe('resolve multiple instances', () => {
     const c = ({ base }: { base: number }) => base + 3;
 
     const container = createContainer({
-      numbers: [a, b, c],
+      numbers: singleton(a, b, c),
       base: 10,
     });
 
@@ -599,8 +637,10 @@ describe('resolve multiple instances', () => {
 
 describe('Injectable', () => {
   test('can be extended by classes', () => {
-    class ServiceA extends Injectable<{ value: string }> {
-      value = this.deps.value;
+    class ServiceA extends Injectable<{
+      value: string;
+    }> {
+      value = this.resolve.value;
     }
 
     const container = createContainer({
@@ -608,7 +648,29 @@ describe('Injectable', () => {
       value: 'test',
     });
 
+    new ServiceA({
+      value: 'test',
+    });
+
     const serviceA = container.resolve('serviceA');
     expect(serviceA.value).toBe('test');
+  });
+
+  test('provides access to container', () => {
+    class ServiceA extends Injectable<{
+      value: string;
+    }> {
+      get values() {
+        return this.container?.resolveAll('value') ?? [];
+      }
+    }
+
+    const container = createContainer({
+      serviceA: ServiceA,
+      value: singleton('a', 'b', 'c'),
+    });
+
+    const serviceA = container.resolve('serviceA');
+    expect(serviceA.values).toEqual(['a', 'b', 'c']);
   });
 });

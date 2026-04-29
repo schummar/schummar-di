@@ -4,7 +4,9 @@
     "target": "ESNext",
     "moduleResolution": "bundler",
     "incremental": true,
-    "tsBuildInfoFile": "node_modules/.cache/.tsbuildinfo"
+    "tsBuildInfoFile": "node_modules/.cache/.tsbuildinfo",
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true
   },
   "include": ["src"]
 }
