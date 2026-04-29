@@ -63,7 +63,7 @@ describe('resolve', () => {
 
   test('with arrays', () => {
     const container = createContainer({
-      value: [1, 2, 3],
+      value: () => [1, 2, 3],
     });
 
     const value = container.resolve('value');
@@ -83,7 +83,7 @@ describe('resolve', () => {
     }
 
     const container = createContainer({
-      serviceA: singleton(ServiceA, ServiceASpecialized),
+      serviceA: [ServiceA, ServiceASpecialized],
     });
 
     const serviceA = container.resolve('serviceA');
@@ -613,7 +613,7 @@ describe('resolve multiple instances', () => {
     const b = () => 2;
     const c = () => 3;
     const container = createContainer({
-      numbers: singleton(a, b, c),
+      numbers: [a, b, c],
     });
 
     const numbers = container.resolveAll('numbers');
@@ -630,7 +630,7 @@ describe('resolve multiple instances', () => {
     }
 
     const container = createContainer({
-      numbers: singleton(a, b, c),
+      numbers: [a, b, c],
       sum,
     });
 
@@ -644,7 +644,7 @@ describe('resolve multiple instances', () => {
     const c = ({ base }: { base: number }) => base + 3;
 
     const container = createContainer({
-      numbers: singleton(a, b, c),
+      numbers: [a, b, c],
       base: 10,
     });
 
@@ -685,7 +685,7 @@ describe('Injectable', () => {
 
     const container = createContainer({
       serviceA: ServiceA,
-      value: singleton('a', 'b', 'c'),
+      value: ['a', 'b', 'c'],
     });
 
     const serviceA = container.resolve('serviceA');

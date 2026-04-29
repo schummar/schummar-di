@@ -20,5 +20,9 @@ export function getImplementations<TServices, TInstance>(
     return service[di].implementations as readonly ServiceFactory<TServices, TInstance>[];
   }
 
+  if (Array.isArray(service)) {
+    return service.map(normalizeService);
+  }
+
   return [normalizeService(service as Service<TServices, TInstance>)];
 }

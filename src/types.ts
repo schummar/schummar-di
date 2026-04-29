@@ -34,7 +34,10 @@ export interface ServiceEntry<TDeps, TInstance> extends ServiceDescription<TDeps
 }
 
 export type ServiceMap<TServices, TDeps = TServices> = {
-  [K in keyof TServices]: Service<TDeps, TServices[K]> | { [di]: ServiceDescription<TDeps, TServices[K]> };
+  [K in keyof TServices]:
+    | Service<TDeps, TServices[K]>
+    | readonly Service<TDeps, TServices[K]>[]
+    | { [di]: ServiceDescription<TDeps, TServices[K]> };
 };
 
 export type Merged<TServices, TOverrideServices> = {
