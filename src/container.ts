@@ -5,10 +5,21 @@ import { getLifeCycle } from './lib/getLifeCycle';
 import { isDisposable } from './lib/isDisposable';
 import isPromise from './lib/isPromise';
 import { normalizeService } from './lib/normalizeService';
-import type { BackgroundService, IContainer, Merged, Service, ServiceEntry, ServiceMap } from './types';
+import type {
+  ContainerOptions,
+  IContainer,
+  Merged,
+  Service,
+  ServiceEntry,
+  ServiceMap,
+  StartableService,
+} from './types';
 
-export function createContainer<TServices>(services: ServiceMap<TServices>): IContainer<TServices> {
-  return new Container(services);
+export function createContainer<TServices>(
+  services: ServiceMap<TServices>,
+  options?: ContainerOptions<TServices>,
+): IContainer<TServices> {
+  return new Container(services, options);
 }
 
 export class Container<TServices> implements AsyncDisposable {
@@ -26,13 +37,13 @@ export class Container<TServices> implements AsyncDisposable {
 
   constructor(
     private serviceMap: ServiceMap<TServices>,
-    private parentScope?: Container<TServices>,
+    private options: ContainerOptions<TServices> = {},
   ) {
     this.services = new Map(
       Reflect.ownKeys(serviceMap).map((key) => {
         const value = serviceMap[key as keyof TServices];
         const implementations = getImplementations(value);
-        const lifeCycle = getLifeCycle(value);
+        const lifeCycle = getLifeCycle(value, options);
 
         return [
           key as keyof TServices,
@@ -86,7 +97,7 @@ export class Container<TServices> implements AsyncDisposable {
 
   waitUntilStarted<TService>(
     service: TService,
-  ): TService extends BackgroundService<infer TStartResult> ? TStartResult : void {
+  ): TService extends StartableService<infer TStartResult> ? TStartResult : void {
     const result = this.startService(service);
 
     if (result instanceof StartError) {
@@ -108,7 +119,7 @@ export class Container<TServices> implements AsyncDisposable {
 
   private startService<TService>(
     service: TService,
-  ): TService extends BackgroundService<infer TStartResult> ? TStartResult : void {
+  ): TService extends StartableService<infer TStartResult> ? TStartResult : void {
     let meta = this.instanceMeta.get(service);
     if (!meta) {
       meta = {};
@@ -159,8 +170,8 @@ export class Container<TServices> implements AsyncDisposable {
       index = entry.implementations.length - 1;
     }
 
-    if (this.parentScope && (entry.lifeCycle === 'singleton' || entry.lifeCycle === 'background')) {
-      return this.parentScope.resolve(key, index);
+    if (this.options.parentScope && (entry.lifeCycle === 'singleton' || entry.lifeCycle === 'background')) {
+      return this.options.parentScope.resolve(key, index);
     }
 
     if (entry.lifeCycle !== 'transient' && entry.instances?.[index]) {
@@ -250,7 +261,10 @@ export class Container<TServices> implements AsyncDisposable {
   }
 
   createScope(): IContainer<TServices> {
-    return new Container<TServices>(this.serviceMap, this);
+    return new Container<TServices>(this.serviceMap, {
+      ...this.options,
+      parentScope: this,
+    });
   }
 
   with<TOverrideServices extends Record<string | number | symbol, unknown> = {}>(
@@ -270,7 +284,7 @@ export class Container<TServices> implements AsyncDisposable {
     for (const [key, value] of Object.entries(services)) {
       const existingImplementations = serviceMap[key as keyof TServices]?.[di]?.implementations ?? [];
       const implementations = getImplementations(value);
-      const lifeCycle = getLifeCycle(value);
+      const lifeCycle = getLifeCycle(value, this.options);
 
       serviceMap[key] = {
         [di]: {

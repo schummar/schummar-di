@@ -3,7 +3,7 @@ import type { Container } from './container';
 
 export type GetContainerType<T> = T extends Container<infer U> ? U : never;
 
-export interface BackgroundService<TStartResult = void> {
+export interface StartableService<TStartResult = void> {
   start?(): TStartResult;
 }
 
@@ -46,3 +46,8 @@ export type Merged<TServices, TOverrideServices> = {
 } & {};
 
 export type IContainer<TServices> = Pick<Container<TServices>, keyof Container<TServices>>;
+
+export interface ContainerOptions<TServices> {
+  defaultLifeCycle?: LifeCycle;
+  parentScope?: Container<TServices>;
+}

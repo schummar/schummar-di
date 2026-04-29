@@ -1,7 +1,8 @@
+import { BackgroundService } from './backgroundService';
 import { createContainer } from './container';
 import { Injectable } from './injectable';
 import { background, scoped, singleton, transient } from './serviceDescriptionHelpers';
-import type { BackgroundService, IContainer } from './types';
+import type { IContainer } from './types';
 import { describe, expect, test, vi } from 'vitest';
 
 describe('resolve', () => {
@@ -87,6 +88,23 @@ describe('resolve', () => {
 
     const serviceA = container.resolve('serviceA');
     expect(serviceA.value).toBe('ab');
+  });
+
+  test('undefined dependencies resolve as undefined', () => {
+    class ServiceA {
+      constructor(private deps: {}) {}
+
+      get value() {
+        return (this.deps as any).serviceB;
+      }
+    }
+
+    const container = createContainer({
+      serviceA: ServiceA,
+    });
+
+    const serviceA = container.resolve('serviceA');
+    expect(serviceA.value).toBeUndefined();
   });
 });
 
@@ -184,7 +202,7 @@ describe('life cycle', () => {
   test('background service is only created once', () => {
     const start = vi.fn();
 
-    class ServiceA implements BackgroundService {
+    class ServiceA {
       start = start;
     }
 
@@ -200,7 +218,7 @@ describe('life cycle', () => {
   test('background service starts automatically', () => {
     const start = vi.fn();
 
-    class ServiceA implements BackgroundService {
+    class ServiceA {
       start = start;
     }
 
@@ -672,5 +690,48 @@ describe('Injectable', () => {
 
     const serviceA = container.resolve('serviceA');
     expect(serviceA.values).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('options', () => {
+  test('defaultLifeCycle', () => {
+    const serviceA = vi.fn(() => ({ value: 'a' }));
+    const serviceB = vi.fn((deps: { serviceA: ReturnType<typeof serviceA> }) => ({
+      value: deps.serviceA.value + 'b',
+    }));
+
+    const container = createContainer(
+      {
+        serviceA,
+        serviceB,
+      },
+      {
+        defaultLifeCycle: 'transient',
+      },
+    );
+
+    const serviceB1 = container.resolve('serviceB');
+    const serviceB2 = container.resolve('serviceB');
+    expect(serviceB1).not.toBe(serviceB2);
+    expect(serviceA).toHaveBeenCalledTimes(2);
+    expect(serviceB).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('BackgroundService', () => {
+  test('background service starts automatically', () => {
+    const start = vi.fn();
+
+    class ServiceA extends BackgroundService {
+      async start() {
+        start();
+      }
+    }
+
+    createContainer({
+      serviceA: ServiceA,
+    });
+
+    expect(start).toHaveBeenCalled();
   });
 });

@@ -1,7 +1,11 @@
+import { isBackgroundService } from '../backgroundService';
 import { di, lifeCycleValues } from '../constants';
-import type { LifeCycle, Service } from '../types';
+import type { ContainerOptions, LifeCycle, Service } from '../types';
 
-export function getLifeCycle<TServices>(service: Service<TServices, unknown>): LifeCycle {
+export function getLifeCycle<TServices>(
+  service: Service<TServices, unknown>,
+  options: ContainerOptions<TServices>,
+): LifeCycle {
   if (
     typeof service === 'object' &&
     service !== null &&
@@ -14,5 +18,9 @@ export function getLifeCycle<TServices>(service: Service<TServices, unknown>): L
     return service[di].lifeCycle as LifeCycle;
   }
 
-  return 'singleton';
+  if (isBackgroundService(service)) {
+    return 'background';
+  }
+
+  return options.defaultLifeCycle ?? 'singleton';
 }
