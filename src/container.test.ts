@@ -1,6 +1,6 @@
 import { BackgroundService } from './backgroundService';
 import { createContainer } from './container';
-import { Injectable } from './injectable';
+import { Injectable, InjectableWithContainer } from './injectable';
 import { background, scoped, singleton, transient } from './serviceDescriptionHelpers';
 import type { IContainer } from './types';
 import { describe, expect, test, vi } from 'vitest';
@@ -675,11 +675,11 @@ describe('Injectable', () => {
   });
 
   test('provides access to container', () => {
-    class ServiceA extends Injectable<{
+    class ServiceA extends InjectableWithContainer<{
       value: string;
     }> {
       get values() {
-        return this.container?.resolveAll('value') ?? [];
+        return this.container.resolveAll('value') ?? [];
       }
     }
 
