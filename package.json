@@ -1,17 +1,27 @@
 {
   "name": "@schummar/di",
   "version": "0.0.0",
-  "description": "A simple dependency injection library for TypeScript.",
+  "description": "A small, type-safe dependency injection container for TypeScript. No decorators, no reflect-metadata, no dependencies.",
   "keywords": [
     "dependency-injection",
     "di",
+    "di-container",
     "inversion-of-control",
     "ioc",
-    "typescript"
+    "container",
+    "service-container",
+    "typescript",
+    "type-safe",
+    "esm"
   ],
   "license": "ISC",
   "author": "Marco Schumacher <marco@schumacher.dev>",
-  "repository": "https://github.com/schummar/schummar-di",
+  "homepage": "https://github.com/schummar/schummar-di#readme",
+  "bugs": "https://github.com/schummar/schummar-di/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/schummar/schummar-di.git"
+  },
   "files": [
     "dist"
   ],
