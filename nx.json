@@ -7,9 +7,6 @@
       "outputs": ["{projectRoot}/dist"],
       "cache": true
     },
-    "publint": {
-      "cache": true
-    },
     "lint": {
       "cache": true
     },

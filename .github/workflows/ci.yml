@@ -8,9 +8,6 @@ permissions:
   id-token: write
   contents: write
 
-env:
-  VOLTA_FEATURE_PNPM: 1
-
 jobs:
   release:
     name: Release
@@ -22,16 +19,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: volta-cli/action@v4
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.21.1
+        with:
+          cache: true
+          run-install: |
+            - args: ['--frozen-lockfile']
 
-      - name: Install dependencies
-        run: pnpm i --frozen-lockfile
-
-      - name: Lint
-        run: pnpm lint
+      - name: Check
+        run: vp run lint
 
       - name: Test
-        run: pnpm test
+        run: vp run test
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -44,10 +43,7 @@ jobs:
         if: always()
 
       - name: Build
-        run: pnpm build
-
-      - name: Publint
-        run: pnpm publint
+        run: vp run build
 
       - name: Setup git user
         run: |
@@ -57,4 +53,4 @@ jobs:
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm nx release -y
+        run: vp exec nx release -y

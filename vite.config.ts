@@ -20,6 +20,7 @@ export default defineConfig({
     target: 'esnext',
     format: ['cjs', 'es'],
     exports: true,
+    publint: true,
   },
 
   fmt: {
