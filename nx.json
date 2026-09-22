@@ -1,7 +1,6 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "defaultBase": "master",
-
   "targetDefaults": {
     "build": {
       "outputs": ["{projectRoot}/dist"],
@@ -16,7 +15,6 @@
       "cache": true
     }
   },
-
   "release": {
     "git": {
       "tag": true,
@@ -31,5 +29,6 @@
         "createRelease": "github"
       }
     }
-  }
+  },
+  "analytics": false
 }
