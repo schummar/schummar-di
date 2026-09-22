@@ -76,11 +76,11 @@ class UserRepository extends Injectable<{ database: Database }> {
 
 ## Life cycles
 
-| Life cycle   | Instances                                                    |
-| ------------ | ------------------------------------------------------------ |
-| `singleton`  | One per container tree (default)                             |
-| `scoped`     | One per scope created with `createScope()`                    |
-| `transient`  | A new one for every resolve                                   |
+| Life cycle   | Instances                                                            |
+| ------------ | -------------------------------------------------------------------- |
+| `singleton`  | One per container tree (default)                                     |
+| `scoped`     | One per scope created with `createScope()`                           |
+| `transient`  | A new one for every resolve                                          |
 | `background` | Singleton, created and started eagerly when the container is created |
 
 ```ts
@@ -184,8 +184,8 @@ class Cleanup extends BackgroundService<{ database: Database }> {
 
 ## Errors
 
-| Error                     | Thrown when                                                  |
-| ------------------------- | ------------------------------------------------------------ |
+| Error                     | Thrown when                                                   |
+| ------------------------- | ------------------------------------------------------------- |
 | `InjectionError`          | A constructor or factory throws; includes the resolution path |
 | `CircularDependencyError` | Two services depend on each other during construction         |
 | `ServiceNotFoundError`    | A resolved key is not registered                              |

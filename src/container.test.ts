@@ -3,7 +3,7 @@ import { createContainer } from './container';
 import { Injectable, InjectableWithContainer } from './injectable';
 import { background, scoped, singleton, transient } from './serviceDescriptionHelpers';
 import type { IContainer } from './types';
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vite-plus/test';
 
 describe('resolve', () => {
   test('with classes', () => {

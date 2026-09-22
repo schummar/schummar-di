@@ -3,21 +3,21 @@
   "version": "0.0.0",
   "description": "A small, type-safe dependency injection container for TypeScript. No decorators, no reflect-metadata, no dependencies.",
   "keywords": [
+    "container",
     "dependency-injection",
     "di",
     "di-container",
+    "esm",
     "inversion-of-control",
     "ioc",
-    "container",
     "service-container",
-    "typescript",
     "type-safe",
-    "esm"
+    "typescript"
   ],
-  "license": "ISC",
-  "author": "Marco Schumacher <marco@schumacher.dev>",
   "homepage": "https://github.com/schummar/schummar-di#readme",
   "bugs": "https://github.com/schummar/schummar-di/issues",
+  "license": "ISC",
+  "author": "Marco Schumacher <marco@schumacher.dev>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/schummar/schummar-di.git"
@@ -40,31 +40,35 @@
     "access": "public"
   },
   "scripts": {
-    "lint": "runp lint:*",
-    "lint:oxlint": "oxlint --type-aware --type-check",
-    "lint:oxfmt": "oxfmt --check",
-    "test": "vitest run --coverage",
-    "test:watch": "vitest",
-    "build": "tsdown --clean --format=esm,cjs --exports"
+    "lint": "vp check",
+    "test": "vp test run --coverage",
+    "test:watch": "vp test",
+    "build": "vp pack",
+    "prepare": "vp config"
   },
   "devDependencies": {
     "@nx/js": "^22.5.3",
-    "@schummar/runp": "^2.2.4",
     "@swc-node/register": "^1.11.1",
     "@swc/core": "^1.15.17",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@types/node": "^26.6.2",
+    "@vitest/coverage-v8": "catalog:",
     "nx": "^22.5.3",
-    "oxfmt": "^0.35.0",
-    "oxlint": "^1.50.0",
-    "oxlint-tsgolint": "^0.15.0",
     "publint": "^0.3.17",
-    "tsdown": "0.21.0-beta.2",
-    "vitest": "^4.0.18"
+    "typescript": "^7.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
-  "volta": {
-    "node": "24.14.0",
-    "npm": "11.11.0",
-    "pnpm": "10.30.3"
-  },
-  "packageManager": "pnpm@10.30.3"
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.5.1",
+      "onFail": "download"
+    },
+    "runtime": {
+      "name": "node",
+      "version": "26.10.0",
+      "onFail": "download"
+    }
+  }
 }
